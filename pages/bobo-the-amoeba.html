@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <link href='http://fonts.googleapis.com/css?family=Noticia+Text:400,700' rel='stylesheet' type='text/css' />
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title> "Bobo the amoeba" | nowave.it </title>
+
+    <link rel="stylesheet" href="../theme/css/style.css" type="text/css" />
+    <link rel="stylesheet" href="../theme/css/pygments.css" type="text/css" />
+    <link rel="stylesheet" href="../theme/css/font-awesome.css" type="text/css"/>
+  </head>
+  <body>
+    <div class=container>
+<div class="header">
+    <a href="../">nowave.it</a> <span class="muted"></span>
+</div>
+
+<div class=navigation>
+    <ul>
+    </ul>
+</div>
+<div class=separator></div>        
+        <div class=body>
+    <div class='page'>
+        <h1> "Bobo the amoeba" </h1>
+        <p><em>An Rmd file for this article can be found at <a href="https://github.com/gmodena/notebooks/blob/master/bobo.Rmd">https://github.com/gmodena/notebooks/blob/master/bobo.Rmd</a></em>.</p>
+<h2>Problem statement</h2>
+<p><em>Bobo the amoeba has a 25%, 25%, and 50% chance of producing 0, 1, or 2 offspring, respectively. Each of Bobo’s descendants also have the same probabilities. What is the probability that Bobo’s lineage dies out?</em></p>
+<h2>Analytical solution</h2>
+<p>Let <span class="math">\(X\)</span> be a random variable describe the event "the population eventually dies out". We are asked to find <span class="math">\(P(X)\)</span>.
+For <span class="math">\(i\)</span> in <span class="math">\({0,1,2}\)</span> let <span class="math">\(A_i\)</span> be a r.v. describing the event that Bobo turns into <span class="math">\(i\)</span> amoebas. It follows that</p>
+<ol>
+<li><span class="math">\(P(X|A_0) = 1\)</span>; Bobo dies without an inins  </li>
+<li><span class="math">\(P(X|A_1) = P(X)\)</span>; Bobo has one offspring, which will retain its reproduction probabilities</li>
+<li><span class="math">\(P(A|X_2) = P(X)^2\)</span>; Bobo has two offspring. Both will retain its reproduction probabilities</li>
+</ol>
+<p>By the law of total probability we can now write <span class="math">\(P(X)\)</span> as 
+</p>
+<div class="math">$$P(X) = \frac{1}{4} P(X|A_0) + \frac{1}{4} P(X|A_1) + \frac{1}{2} P(X|A_2)$$</div>
+<p>by doing simple algebra we reduce the equation to
+<span class="math">\(0 = \frac{1}{4}  + P(X) (-\frac{3}{4}  + \frac{1}{2} P(X))\)</span></p>
+<p>which has roots <span class="math">\(P(X) = \frac{1}{2}\)</span> and <span class="math">\(P(X) = 1\)</span>.</p>
+<p>Which one should we pick? Intuitively we can expect P(X) to be &lt; 1, but let's validate this by means of simulation.</p>
+<h2>Simulation</h2>
+<p>We can simulate a few iterations of Bobo's reproductive process and count how many times its lineage died out. If we do this for a large enough number of iterations, we should get an asymptotic value good enough to discriminate between the two roots. It's also a good excuse to brush up some R.</p>
+<div class="highlight"><pre><span class="kn">library</span><span class="p">(</span><span class="s">&#39;ggplot2&#39;</span><span class="p">)</span>
+</pre></div>
+
+
+<p>We can encode the probabilities <span class="math">\(P(A_i)\)</span> as </p>
+<div class="highlight"><pre>p <span class="o">&lt;-</span> <span class="kt">c</span><span class="p">(</span><span class="m">0.25</span><span class="p">,</span> <span class="m">0.25</span><span class="p">,</span> <span class="m">0.50</span><span class="p">)</span>
+</pre></div>
+
+
+<p>To generate an offspring wrt the given proabilities <em>p</em> we use a function that simulates a multinomial distribution.</p>
+<div class="highlight"><pre>offspring <span class="o">&lt;-</span> <span class="kr">function</span><span class="p">(</span>v<span class="p">)</span> <span class="p">{</span>
+  r <span class="o">&lt;-</span> runif<span class="p">(</span>n<span class="o">=</span><span class="m">1</span><span class="p">)</span>
+  inP <span class="o">&lt;-</span> <span class="m">-1</span>
+  <span class="kr">for</span> <span class="p">(</span>k <span class="kr">in</span> <span class="m">1</span><span class="o">:</span><span class="kp">length</span><span class="p">(</span>p<span class="p">))</span> <span class="p">{</span>
+    inP <span class="o">&lt;-</span> k
+    <span class="kr">if</span> <span class="p">((</span>k <span class="o">==</span> <span class="m">1</span><span class="p">)</span> <span class="o">&amp;</span> <span class="p">(</span>r <span class="o">&lt;</span> v<span class="p">[</span>k<span class="p">]))</span> <span class="p">{</span>
+      inP <span class="o">&lt;-</span> k<span class="m">-1</span>
+      <span class="kr">break</span>
+    <span class="p">}</span>
+    <span class="kr">else</span> <span class="kr">if</span> <span class="p">(</span> <span class="p">(</span>k<span class="o">&gt;</span><span class="m">1</span><span class="p">)</span> <span class="o">&amp;</span> <span class="p">(</span>r <span class="o">&lt;</span> <span class="kp">sum</span><span class="p">(</span>v<span class="p">[</span><span class="m">1</span><span class="o">:</span>k<span class="p">]))</span> <span class="p">)</span> <span class="p">{</span>
+      inP <span class="o">&lt;-</span> k<span class="m">-1</span>
+      <span class="kr">break</span>
+    <span class="p">}</span>
+  <span class="p">}</span>
+  <span class="kr">return</span><span class="p">(</span>inP<span class="p">)</span>
+<span class="p">}</span>
+</pre></div>
+
+
+<p>We can refactor this code in a more performant, vectorized, form as:</p>
+<div class="highlight"><pre>offspring <span class="o">&lt;-</span> <span class="kr">function</span><span class="p">(</span>v<span class="p">)</span> <span class="p">{</span>
+  <span class="kp">match</span><span class="p">(</span><span class="m">1</span><span class="p">,</span> rmultinom<span class="p">(</span><span class="m">1</span><span class="p">,</span> <span class="m">1</span><span class="p">,</span> p<span class="p">))</span><span class="m">-1</span>
+<span class="p">}</span>
+</pre></div>
+
+
+<p>To convince ourselves that the multinomial simulation works, let's plot the frequency of each offspring over a few thousand iterations.</p>
+<div class="highlight"><pre>t <span class="o">&lt;-</span> <span class="kp">replicate</span><span class="p">(</span><span class="m">10000</span><span class="p">,</span> offspring<span class="p">(</span>p<span class="p">))</span>
+
+df <span class="o">&lt;-</span> <span class="kp">as.data.frame</span><span class="p">(</span><span class="kp">t</span><span class="p">)</span>
+<span class="kp">colnames</span><span class="p">(</span>df<span class="p">)</span> <span class="o">&lt;-</span> <span class="kt">c</span><span class="p">(</span><span class="s">&quot;outcomes&quot;</span><span class="p">)</span>
+ggplot<span class="p">(</span>data<span class="o">=</span>df<span class="p">,</span> aes<span class="p">(</span>x<span class="o">=</span><span class="kp">as.factor</span><span class="p">(</span>outcomes<span class="p">)))</span> <span class="o">+</span> 
+  geom_histogram<span class="p">()</span> <span class="o">+</span>
+  xlab<span class="p">(</span><span class="s">&quot;outcomes&quot;</span><span class="p">)</span> <span class="o">+</span> 
+  ggtitle<span class="p">(</span><span class="s">&quot;Number of offspring&quot;</span><span class="p">)</span>
+</pre></div>
+
+
+<p><img alt="plot of chunk unnamed-chunk-5" src="figure/bobo/unnamed-chunk-5-1.png" /> </p>
+<h3>Simulation runs</h3>
+<div class="highlight"><pre>max_iterations <span class="o">&lt;-</span> <span class="m">1000</span>
+max_generations <span class="o">&lt;-</span> <span class="m">100</span>
+</pre></div>
+
+
+<p>Finally let's simulate Bobo offspring over time. How many runs resulted in the offspring dying off within <code>{r} max_generations</code> out of <code>{r} max_iterations</code>?</p>
+<div class="highlight"><pre>is_extinct <span class="o">&lt;-</span><span class="kr">function</span><span class="p">(</span>generations<span class="p">)</span> <span class="p">{</span>
+    offs <span class="o">&lt;-</span> <span class="m">1</span> <span class="c1"># We start with only Bobo</span>
+    next_offs <span class="o">&lt;-</span> <span class="m">0</span> <span class="c1"># offspring of the next generation</span>
+
+    <span class="kr">while</span> <span class="p">(</span>offs <span class="o">&lt;=</span> generations<span class="p">)</span> <span class="p">{</span> <span class="c1"># loop through generations  </span>
+      <span class="kr">if</span> <span class="p">(</span>offs <span class="o">==</span> <span class="m">0</span><span class="p">)</span> <span class="p">{</span> <span class="c1"># lineage died out</span>
+        <span class="kr">break</span>
+      <span class="p">}</span>
+      next_offs <span class="o">&lt;-</span> <span class="m">0</span> <span class="c1"># offspring of the current generation</span>
+      <span class="kr">for</span> <span class="p">(</span>j <span class="kr">in</span> <span class="m">1</span><span class="o">:</span>offs<span class="p">)</span> <span class="p">{</span>
+        next_offs <span class="o">&lt;-</span> next_offs <span class="o">+</span> offspring<span class="p">(</span>p<span class="p">)</span>
+      <span class="p">}</span>
+      offs <span class="o">&lt;-</span> next_offs
+    <span class="p">}</span>
+    <span class="kr">return</span><span class="p">(</span><span class="kp">as.integer</span><span class="p">(</span>offs <span class="o">&lt;</span> generations<span class="p">))</span> <span class="c1"># TRUE if the lineage dies out</span>
+<span class="p">}</span>
+
+<span class="c1"># count the number of times Bobo&#39;s lineage died off. Do it for 10 runs of</span>
+<span class="c1"># max_iterations each</span>
+res <span class="o">&lt;-</span> <span class="kp">replicate</span><span class="p">(</span><span class="m">10</span><span class="p">,</span> 
+    <span class="kp">sum</span><span class="p">(</span><span class="kp">replicate</span><span class="p">(</span>max_iterations<span class="p">,</span> is_extinct<span class="p">(</span>max_generations<span class="p">)))</span> 
+    <span class="o">/</span> max_iterations<span class="p">)</span>
+</pre></div>
+
+
+<p>Results suggest that Bobo's lineage will go extinct with <span class="math">\(P(X) = \frac{1}{2}\)</span>.</p>
+<div class="highlight"><pre><span class="kp">summary</span><span class="p">(</span>res<span class="p">)</span>
+</pre></div>
+
+
+<div class="highlight"><pre>##    Min. 1st Qu.  Median    Mean 3rd Qu.    Max. 
+##  0.4820  0.4980  0.5015  0.5051  0.5130  0.5240
+</pre></div>
+
+
+<h2>Analytical solution, reprise</h2>
+<p>More formally, this problem can be modelled as a branching process; that is, we can look at it as a Markov chain where the state <span class="math">\(A_n\)</span> represents the number of amoebas at generation (or time) <span class="math">\(n\)</span>, and transition probabilities can be written in the from <span class="math">\(P(A_{n+1} = i |A_n =k) = P W_1 + W_2 + ... + W_k = i)\)</span>, where <span class="math">\(W_1, ..., W_k\)</span> are independent random variables each representing the offspring distribution. This leads to a recursive representation of the problem, where each <span class="math">\(W_k\)</span> models a branching process. We observe that if <span class="math">\(A_n\)</span> reaches 0, it says there (0 is an absorbing state). It is known (theorem) that when an individual has less than one offspring on average, denoted as <span class="math">\(\mu \leq 1\)</span>, its lineage will die out with <span class="math">\(P("extinction") = 1\)</span>. When <span class="math">\(\mu \gt 1\)</span> there are two solutions for the recursive sequence <span class="math">\(P(X) = \frac{1}{4} P(X|A_0) + \frac{1}{4} P(X|A_1) + \frac{1}{2} P(X|A_2)\)</span> and the extinction probability is the smallest of the two.
+Analysis and proofs can be found at <a href="https://www.math.ucdavis.edu/~gravner/MAT135B/materials/ch14.pdf">this link</a></p>
+<p>In our case the offspring expectation is <span class="math">\(\mu = 1.25\)</span>; it follows that Bobo's lineage will go extinct with probability <span class="math">\(P(X) = \frac{1}{2}\)</span>.</p>
+<script type="text/javascript">if (!document.getElementById('mathjaxscript_pelican_#%@#$@#')) {
+    var align = "center",
+        indent = "0em",
+        linebreak = "false";
+
+    if (false) {
+        align = (screen.width < 768) ? "left" : align;
+        indent = (screen.width < 768) ? "0em" : indent;
+        linebreak = (screen.width < 768) ? 'true' : linebreak;
+    }
+    
+    var mathjaxscript = document.createElement('script');
+    var location_protocol = (false) ? 'https' : document.location.protocol;
+    if (location_protocol !== 'http' && location_protocol !== 'https') location_protocol = 'https:';
+    mathjaxscript.id = 'mathjaxscript_pelican_#%@#$@#';
+    mathjaxscript.type = 'text/javascript'; 
+    mathjaxscript.src = location_protocol + '//cdn.mathjax.org/mathjax/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML';
+    mathjaxscript[(window.opera ? "innerHTML" : "text")] =
+        "MathJax.Hub.Config({" +
+        "    config: ['MMLorHTML.js']," +
+        "    TeX: { extensions: ['AMSmath.js','AMSsymbols.js','noErrors.js','noUndefined.js'], equationNumbers: { autoNumber: 'AMS' } }," +
+        "    jax: ['input/TeX','input/MathML','output/HTML-CSS']," +
+        "    extensions: ['tex2jax.js','mml2jax.js','MathMenu.js','MathZoom.js']," +
+        "    displayAlign: '"+ align +"'," +
+        "    displayIndent: '"+ indent +"'," +
+        "    showMathMenu: true," +
+        "    tex2jax: { " +
+        "        inlineMath: [ ['\\\\(','\\\\)'] ], " +
+        "        displayMath: [ ['$$','$$'] ]," +
+        "        processEscapes: true," +
+        "        preview: 'TeX'," +
+        "    }, " +
+        "    'HTML-CSS': { " +
+        "        styles: { '.MathJax_Display, .MathJax .mo, .MathJax .mi, .MathJax .mn': {color: 'inherit ! important'} }," +
+        "        linebreaks: { automatic: "+ linebreak +", width: '90% container' }," +
+        "    }, " +
+        "}); " +
+        "if ('default' !== 'default') {" +
+            "MathJax.Hub.Register.StartupHook('HTML-CSS Jax Ready',function () {" +
+                "var VARIANT = MathJax.OutputJax['HTML-CSS'].FONTDATA.VARIANT;" +
+                "VARIANT['normal'].fonts.unshift('MathJax_default');" +
+                "VARIANT['bold'].fonts.unshift('MathJax_default-bold');" +
+                "VARIANT['italic'].fonts.unshift('MathJax_default-italic');" +
+                "VARIANT['-tex-mathit'].fonts.unshift('MathJax_default-italic');" +
+            "});" +
+            "MathJax.Hub.Register.StartupHook('SVG Jax Ready',function () {" +
+                "var VARIANT = MathJax.OutputJax.SVG.FONTDATA.VARIANT;" +
+                "VARIANT['normal'].fonts.unshift('MathJax_default');" +
+                "VARIANT['bold'].fonts.unshift('MathJax_default-bold');" +
+                "VARIANT['italic'].fonts.unshift('MathJax_default-italic');" +
+                "VARIANT['-tex-mathit'].fonts.unshift('MathJax_default-italic');" +
+            "});" +
+        "}";
+    (document.body || document.getElementsByTagName('head')[0]).appendChild(mathjaxscript);
+}
+</script>
+    </div>
+        </div>
+        
+<div class=footer>
+   <div class="contact">
+      <p>
+        &raquo;
+        <a href="mailto:gm@nowave.it">gm@nowave.it</a> |
+        <a href="http://github.com/gmodena" target="_blank">github.com/gmodena</a> |
+        <a href="http://twitter.com/gabriele_modena" target="_blank">http://twitter.com/gabriele_modena</a>
+        &laquo;
+      </p>
+    </div>
+  <p>&copy; Copyright <script language="JavaScript">var date = new Date(); document.write(date.getFullYear());</script> by Gabriele Modena</p>
+  <p>  
+    <a href="https://github.com/fjavieralba/flasky">Theme</a>  by <a href="http://fjavieralba.com">fjavieralba</a> (Modified)
+  </p> 
+<!--
+  <p>
+    <div class=social style="font-size: 27px;">
+      <ul>
+        <script language="JavaScript">
+          u = '';
+          s = '';
+          document.write('<a href=\"mailto:' + u + '@' + s + '\" target=\"_blank\">');
+        </script>
+            <li><i class="icon-envelope icon-large"></i> </li>
+        </a>
+        <a href="http://twitter.com/" target="_blank"> <li> <i class="icon-twitter-sign icon-large"> </li></i> </a>
+        <a href="" target="_blank"><li><i class="icon-linkedin-sign icon-large" ></i></li></a>
+        <a href="" target="_blank"> <li> <i class="icon-github-sign icon-large"></i> </li> </a>
+        <a href="" target="_blank"><li> <i class="icon-facebook-sign icon-large"></i></li> </a>
+        <a href="" target="_blank"><li><i class="icon-google-plus-sign icon-large"></i> </li> </a>
+        <a href="" target="_blank"><li><i class="icon-pinterest-sign icon-large"></i></li></a>
+
+
+        <a href="../feeds/all.rss.xml" rel="alternate" title="Recent Blog Posts"><li> <i class="icon-rss icon-large"></i> </li></a>
+      </ul>
+    </div>
+  </p>
+-->
+</div>    </div>
+  </body>
+</html>
