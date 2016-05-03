@@ -25,21 +25,21 @@
     <h1 class="title"> Learning rugby world rankings</h1>
     <p class=date> Tue 03 May 2016 </p>
     <p><em>For the purpose of this post: rugby = rugby union</em></p>
-<p>When trying to <a href="http://">predict rugby outcomes</a>, a reasonable idea seemed to be using teams' position in world rankings as a feature. Ideally my goal was to have a <em>rank at time <span class="math">\(t\)</span></em> feature, so that eg. when validating the model by predicting outcomes of the 2011 world cup, I could use 2011 rankings. Easier said than done.</p>
+<p>When trying to <a href="http://http://rwc2015.nowave.it">predict rugby outcomes</a>, a reasonable idea seemed to be using teams' position in world rankings as a feature. Ideally, my goal was to have a <em>rank at time <span class="math">\(t\)</span></em> feature, so that eg. when validating the model by predicting outcomes of the 2011 world cup, I could use 2011 rankings. Easier said than done.</p>
 <h1>The point exchange system</h1>
 <p>All World Rugby member countries are rating that is a number in the range of 0 to 100. The rating is calculated using a <em>points exchange</em> system, where a team can move up down in ranking based on it's performance. Since scraping historical data is not an option, why not implement the points exchange algorithm?</p>
 <p><a href="http://www.worldrugby.org/rankings/explanation">www.worldrugby.org</a> gives an explanation of how the ranking is generated. This comes with a degree of magic that is are the "rating gap" coefficient, other seemingly arbitrary multiplicative factors.  </p>
-<p>This systems does not strike me as particularly intuitive and attempts to implement the algorithm lead to results inconsistent with the expected ones. Nor have I been able to find and off the shelf satisfactory implementation.</p>
+<p>This system does not strike me as particularly intuitive and attempts to implement the algorithm lead to results inconsistent with the expected ones. Nor have I been able to find and off the shelf satisfactory implementation.</p>
 <p>After a couple of evenings spend debugging and tuning coefficients, it seemed appropriate to look at this as a learning from data problem.</p>
-<p>In a machine learning framework, we want to estimate some latent strenght <span class="math">\(\alpha_i\)</span> and <span class="math">\(\alpha_j\)</span> of team <span class="math">\(i\)</span> and <span class="math">\(j\)</span> teams, based on a dataset of past outcomes in <span class="math">\(n\)</span> matches; by doing a pairwise comparison for all teams, we can determine how strong they are relatively to each other. </p>
-<h1>Bradley Terry (Luce) models</h1>
-<p>The Bradley–Terry-Luce (BTL) is a well known family of probability models for pairwise comparisons, that date back to the 1920s. The canonical formulation states that given a pair of items <span class="math">\(i\)</span> and <span class="math">\(j\)</span>, we can estimates the probability that the pairwise comparison <span class="math">\(i &gt; j\)</span>  (read this as "i outperforms j") as</p>
+<p>In a machine learning framework, we want to estimate some latent strength <span class="math">\(\alpha_i\)</span> and <span class="math">\(\alpha_j\)</span> of team <span class="math">\(i\)</span> and <span class="math">\(j\)</span> teams, based on a dataset of past outcomes in <span class="math">\(n\)</span> matches; by doing a pairwise comparison for all teams, we can determine how strong they are relatively to each other. </p>
+<h1>Bradley-Terry (Luce) models</h1>
+<p>The Bradley–Terry-Luce (BTL) is a well-known family of probability models for pairwise comparisons, that date back to the 1920s. The canonical formulation states that given a pair of items <span class="math">\(i\)</span> and <span class="math">\(j\)</span>, we can estimate the probability that the pairwise comparison <span class="math">\(i &gt; j\)</span>  (read this as "i outperforms j") as</p>
 <p><span class="math">\(P(i &gt; j) = \frac{\alpha_{i}}{\alpha_i + \alpha_j}\)</span></p>
-<p>By exponentiating both the numerator and denominator, and applying the logit function to <span class="math">\(P(i &gt; j)\)</span>, we can conveniently reparametrize the model as </p>
+<p>By exponentiating both the numerator and denominator and applying the logit function to <span class="math">\(P(i &gt; j)\)</span>, we can conveniently reparametrize the model as </p>
 <p><span class="math">\(\sigma(\alpha_i - \alpha_j)\)</span></p>
 <p>where <span class="math">\(\sigma(x) = \frac{1}{1 + e^{-x}}\)</span>.</p>
 <p>Note that we essentially reformulated the BTL model as a logistic regression. For more details see eg. <a href="http://web4.cs.ucl.ac.uk/staff/D.Barber/pmwiki/pmwiki.php?n=Brml.HomePage">Barber, 2012</a>.</p>
-<p>In sports terms, we are saying that a team's (latent) strenght can be characterised by a real valued <span class="math">\(\alpha\)</span>, and the probability of team <span class="math">\(i\)</span> defeating team <span class="math">\(j\)</span> is proportional to their difference in strength. </p>
+<p>In sports terms, we are saying that a team's (latent) strength can be characterized by a real-valued <span class="math">\(\alpha\)</span>, and the probability of team <span class="math">\(i\)</span> defeating team <span class="math">\(j\)</span> is proportional to their difference in strength. </p>
 <h2>Parameter estimation</h2>
 <p><span class="math">\(\alpha_i\)</span> and <span class="math">\(\alpha_j\)</span> can be learned via maximum likelihood estimation. </p>
 <p>Given a matrix <span class="math">\(X\)</span> of game data, the likelihood function of the model is given by:</p>
@@ -66,7 +66,7 @@
 
 
 <p>and <code>X</code> is a matrix of game outcomes. Each row is a triple <span class="math">\(i, j, n\)</span>, where <span class="math">\(n\)</span> is the number of times team <span class="math">\(i\)</span> has defeated team <span class="math">\(j\)</span>.  Note that we are considering both <span class="math">\(i\)</span> vs <span class="math">\(j\)</span> and <span class="math">\(j\)</span> vs. <span class="math">\(i\)</span>,  although we are not incorporating home advantage in our model.</p>
-<p>Finally we minimize <code>loglikelihood(m, X)</code> with</p>
+<p>Finally, we minimize <code>loglikelihood(m, X)</code> with</p>
 <div class="highlight"><pre><span class="kn">from</span> <span class="nn">scipy.optimize</span> <span class="kn">import</span> <span class="n">minimize</span>
 
 <span class="n">r</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">n_teams</span><span class="p">)</span>
@@ -79,7 +79,7 @@
 
 <h1>Let's rank</h1>
 <p>A dataset of 1102 matches, from January 2000 to April 2016, has been obtained from <a href="http://www.lassen.co.nz/pickandgo.php">http://www.lassen.co.nz/pickandgo.php</a>; draws (21) have been filtered out. Figure 1 shows the pairwise results; the darker a cell, the more times team <span class="math">\(i\)</span> defeated team <span class="math">\(j\)</span> in the past 16 years.</p>
-<p><img alt="2000-2016 victories matrix" src="./images/rugby-btl/victories.png" />
+<p><img alt="2000-2016 victories matrix" src="./figure/rugby-btl/victories.png" />
 *Figure 1. number of victories team <span class="math">\(i\)</span> has over team <span class="math">\(j\)</span> *</p>
 <p>The model estimated the following ranking: </p>
 <table>
@@ -338,11 +338,11 @@
 </tr>
 </tbody>
 </table>
-<p>Arguably, the first three positions are easy to estimate. New Zeland, Australia, South Africa and  are dominant teams, continusoly contending the highest spots in the chart. A possibly more interesting metric is to look at RMSE for postion 4-10 and 4-20, which is 2.7 and 2.73 respectively.</p>
+<p>Arguably, the first three positions are easy to estimate. New Zeland, Australia, South Africa and  are dominant teams, continuously contending the highest spots in the chart. A possibly more interesting metric is to look at RMSE for position 4-10 and 4-20, which is 2.7 and 2.73 respectively.</p>
 <h1>Considerations and next steps</h1>
 <p>All in all BTL's performance exceed my expectations.</p>
 <p>However, there are a number of issues with this approach. The most obvious one being that <em>home advantage</em> is an important factor in sport, which should be incorporated. Same goes for ties; they are a relatively rare event in rugby, but it would be nice to model this scenario for reuse in other sports. Another very important issue is that we are giving the same weight to a match that happened yesterday or 16 years ago.</p>
-<p>Finally,  MLE is likely to overfit when the training sample is small. Bayesian estimation techniques (and/or generalised linear models) are also something I plan to try out. </p>
+<p>Finally,  MLE is likely to overfit when the training sample is small. Bayesian estimation techniques (and/or generalized linear models) are also something I plan to try out. </p>
 <script type="text/javascript">if (!document.getElementById('mathjaxscript_pelican_#%@#$@#')) {
     var align = "center",
         indent = "0em",
