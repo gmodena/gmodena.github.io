@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <link href='http://fonts.googleapis.com/css?family=Noticia+Text:400,700' rel='stylesheet' type='text/css' />
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title> Learning rugby world rankings | nowave.it </title>
+
+    <link rel="stylesheet" href="./theme/css/style.css" type="text/css" />
+    <link rel="stylesheet" href="./theme/css/pygments.css" type="text/css" />
+    <link rel="stylesheet" href="./theme/css/font-awesome.css" type="text/css"/>
+  </head>
+  <body>
+    <div class=container>
+<div class="header">
+    <a href="./">nowave.it</a> <span class="muted"></span>
+</div>
+
+<div class=navigation>
+    <ul>
+    </ul>
+</div>
+<div class=separator></div>        
+        <div class=body>
+    <h1 class="title"> Learning rugby world rankings</h1>
+    <p class=date> Tue 03 May 2016 </p>
+    <p><em>For the purpose of this post: rugby = rugby union</em></p>
+<p>When trying to <a href="http://">predict rugby outcomes</a>, a reasonable idea seemed to be using teams' position in world rankings as a feature. Ideally my goal was to have a <em>rank at time <span class="math">\(t\)</span></em> feature, so that eg. when validating the model by predicting outcomes of the 2011 world cup, I could use 2011 rankings. Easier said than done.</p>
+<h1>The point exchange system</h1>
+<p>All World Rugby member countries are rating that is a number in the range of 0 to 100. The rating is calculated using a <em>points exchange</em> system, where a team can move up down in ranking based on it's performance. Since scraping historical data is not an option, why not implement the points exchange algorithm?</p>
+<p><a href="http://www.worldrugby.org/rankings/explanation">www.worldrugby.org</a> gives an explanation of how the ranking is generated. This comes with a degree of magic that is are the "rating gap" coefficient, other seemingly arbitrary multiplicative factors.  </p>
+<p>This systems does not strike me as particularly intuitive and attempts to implement the algorithm lead to results inconsistent with the expected ones. Nor have I been able to find and off the shelf satisfactory implementation.</p>
+<p>After a couple of evenings spend debugging and tuning coefficients, it seemed appropriate to look at this as a learning from data problem.</p>
+<p>In a machine learning framework, we want to estimate some latent strenght <span class="math">\(\alpha_i\)</span> and <span class="math">\(\alpha_j\)</span> of team <span class="math">\(i\)</span> and <span class="math">\(j\)</span> teams, based on a dataset of past outcomes in <span class="math">\(n\)</span> matches; by doing a pairwise comparison for all teams, we can determine how strong they are relatively to each other. </p>
+<h1>Bradley Terry (Luce) models</h1>
+<p>The Bradley–Terry-Luce (BTL) is a well known family of probability models for pairwise comparisons, that date back to the 1920s. The canonical formulation states that given a pair of items <span class="math">\(i\)</span> and <span class="math">\(j\)</span>, we can estimates the probability that the pairwise comparison <span class="math">\(i &gt; j\)</span>  (read this as "i outperforms j") as</p>
+<p><span class="math">\(P(i &gt; j) = \frac{\alpha_{i}}{\alpha_i + \alpha_j}\)</span></p>
+<p>By exponentiating both the numerator and denominator, and applying the logit function to <span class="math">\(P(i &gt; j)\)</span>, we can conveniently reparametrize the model as </p>
+<p><span class="math">\(\sigma(\alpha_i - \alpha_j)\)</span></p>
+<p>where <span class="math">\(\sigma(x) = \frac{1}{1 + e^{-x}}\)</span>.</p>
+<p>Note that we essentially reformulated the BTL model as a logistic regression. For more details see eg. <a href="http://web4.cs.ucl.ac.uk/staff/D.Barber/pmwiki/pmwiki.php?n=Brml.HomePage">Barber, 2012</a>.</p>
+<p>In sports terms, we are saying that a team's (latent) strenght can be characterised by a real valued <span class="math">\(\alpha\)</span>, and the probability of team <span class="math">\(i\)</span> defeating team <span class="math">\(j\)</span> is proportional to their difference in strength. </p>
+<h2>Parameter estimation</h2>
+<p><span class="math">\(\alpha_i\)</span> and <span class="math">\(\alpha_j\)</span> can be learned via maximum likelihood estimation. </p>
+<p>Given a matrix <span class="math">\(X\)</span> of game data, the likelihood function of the model is given by:</p>
+<p><span class="math">\( p(X|\alpha) = \prod_{ij} [\sigma(\alpha_i - \alpha_j)^{M_{ij}} ]\)</span></p>
+<p>where <span class="math">\(M_{ij}\)</span> is the number of times team <span class="math">\(i\)</span> defeated team <span class="math">\(j\)</span>.</p>
+<p>In Python, we can use  <code>scipy.optimize</code> to minimize the negative loglikelihood:</p>
+<div class="highlight"><pre><span class="k">def</span> <span class="nf">loglikelihood</span><span class="p">(</span><span class="n">m</span><span class="p">,</span> <span class="n">X</span><span class="p">):</span>
+    <span class="n">ll</span> <span class="o">=</span> <span class="mf">0.0</span>
+    <span class="n">nrows</span><span class="p">,</span> <span class="n">ncols</span> <span class="o">=</span> <span class="n">X</span><span class="o">.</span><span class="n">shape</span>
+    <span class="k">for</span> <span class="n">idx</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">nrows</span><span class="p">):</span>
+        <span class="n">i</span><span class="p">,</span> <span class="n">j</span><span class="p">,</span> <span class="n">n</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">X</span><span class="p">[</span><span class="n">idx</span><span class="p">,</span> <span class="mi">0</span><span class="p">]),</span> <span class="nb">int</span><span class="p">(</span><span class="n">X</span><span class="p">[</span><span class="n">idx</span><span class="p">,</span> <span class="mi">1</span><span class="p">]),</span> <span class="nb">int</span><span class="p">(</span><span class="n">X</span><span class="p">[</span><span class="n">idx</span><span class="p">,</span> <span class="mi">2</span><span class="p">])</span>
+
+        <span class="n">ll</span> <span class="o">+=</span> <span class="n">n</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="n">sigmoid</span><span class="p">(</span><span class="n">m</span><span class="o">.</span><span class="n">r</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">-</span> <span class="n">m</span><span class="o">.</span><span class="n">r</span><span class="p">[</span><span class="n">j</span><span class="p">]))</span>
+    <span class="k">return</span> <span class="o">-</span><span class="n">ll</span>
+</pre></div>
+
+
+<p>where <code>m</code> is an instance of </p>
+<div class="highlight"><pre><span class="k">class</span> <span class="nc">BradleyTerry</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">r</span><span class="p">):</span>
+        <span class="c"># ranking</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">r</span> <span class="o">=</span> <span class="n">r</span>
+</pre></div>
+
+
+<p>and <code>X</code> is a matrix of game outcomes. Each row is a triple <span class="math">\(i, j, n\)</span>, where <span class="math">\(n\)</span> is the number of times team <span class="math">\(i\)</span> has defeated team <span class="math">\(j\)</span>.  Note that we are considering both <span class="math">\(i\)</span> vs <span class="math">\(j\)</span> and <span class="math">\(j\)</span> vs. <span class="math">\(i\)</span>,  although we are not incorporating home advantage in our model.</p>
+<p>Finally we minimize <code>loglikelihood(m, X)</code> with</p>
+<div class="highlight"><pre><span class="kn">from</span> <span class="nn">scipy.optimize</span> <span class="kn">import</span> <span class="n">minimize</span>
+
+<span class="n">r</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">n_teams</span><span class="p">)</span>
+<span class="k">def</span> <span class="nf">f</span><span class="p">(</span><span class="n">r</span><span class="p">):</span>
+    <span class="k">return</span> <span class="n">loglikelihood</span><span class="p">(</span><span class="n">BradleyTerry</span><span class="p">(</span><span class="n">r</span><span class="p">),</span> <span class="n">X</span><span class="p">)</span>
+
+<span class="n">res</span> <span class="o">=</span> <span class="n">minimize</span><span class="p">(</span><span class="n">f</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">n_teams</span><span class="p">))</span>
+</pre></div>
+
+
+<h1>Let's rank</h1>
+<p>A dataset of 1102 matches, from January 2000 to April 2016, has been obtained from <a href="http://www.lassen.co.nz/pickandgo.php">http://www.lassen.co.nz/pickandgo.php</a>; draws (21) have been filtered out. Figure 1 shows the pairwise results; the darker a cell, the more times team <span class="math">\(i\)</span> defeated team <span class="math">\(j\)</span> in the past 16 years.</p>
+<p><img alt="2000-2016 victories matrix" src="./figure/rugby-btl/victories.png" />
+*Figure 1. number of victories team <span class="math">\(i\)</span> has over team <span class="math">\(j\)</span> *</p>
+<p>The model estimated the following ranking: </p>
+<table>
+<thead>
+<tr>
+<th>rank</th>
+<th>team</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>0</td>
+<td>NZL</td>
+</tr>
+<tr>
+<td>1</td>
+<td>AUS</td>
+</tr>
+<tr>
+<td>2</td>
+<td>SAF</td>
+</tr>
+<tr>
+<td>3</td>
+<td>ENG</td>
+</tr>
+<tr>
+<td>4</td>
+<td>FRA</td>
+</tr>
+<tr>
+<td>5</td>
+<td>IRE</td>
+</tr>
+<tr>
+<td>6</td>
+<td>WAL</td>
+</tr>
+<tr>
+<td>7</td>
+<td>ARG</td>
+</tr>
+<tr>
+<td>8</td>
+<td>SCO</td>
+</tr>
+<tr>
+<td>9</td>
+<td>ITA</td>
+</tr>
+<tr>
+<td>10</td>
+<td>SAM</td>
+</tr>
+<tr>
+<td>11</td>
+<td>FIJ</td>
+</tr>
+<tr>
+<td>12</td>
+<td>GEO</td>
+</tr>
+<tr>
+<td>13</td>
+<td>ROM</td>
+</tr>
+<tr>
+<td>14</td>
+<td>CAN</td>
+</tr>
+<tr>
+<td>15</td>
+<td>JAP</td>
+</tr>
+<tr>
+<td>16</td>
+<td>TON</td>
+</tr>
+<tr>
+<td>17</td>
+<td>USA</td>
+</tr>
+<tr>
+<td>18</td>
+<td>SPA</td>
+</tr>
+<tr>
+<td>19</td>
+<td>CHL</td>
+</tr>
+<tr>
+<td>20</td>
+<td>POR</td>
+</tr>
+<tr>
+<td>21</td>
+<td>PAC</td>
+</tr>
+<tr>
+<td>22</td>
+<td>RUS</td>
+</tr>
+<tr>
+<td>23</td>
+<td>URU</td>
+</tr>
+<tr>
+<td>24</td>
+<td>NAM</td>
+</tr>
+<tr>
+<td><em>Table 1. BTL ranking</em></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<p>This looks good. New Zeland trumps everyone, with South Africa and Australia breathing on the All Blacks' neck. Following are the 6 Nations team and Argentina. Tier 2 nations trailing. </p>
+<h2>Evaluation</h2>
+<p>How does the model compare to the official World Rugby rankings?</p>
+<p>For <span class="math">\(n\)</span> teams let</p>
+<p><span class="math">\(RMSE  = \sqrt{ \frac{ \sum_{i=0}^n (y_i - \hat{y}_i )^2 }{n} }\)</span></p>
+<p>be our evaluation metric of choice. <span class="math">\(y_i\)</span> is the position of team <span class="math">\(i\)</span> in  World Rugby rankings, while <span class="math">\(\hat{y}_i\)</span> is the position predicted bt BTL.</p>
+<p>The RMSE of BTL for the estimated top 20 teams is ~2.50. Not perfect, but, as it turns out it, good enough to feed a predictive model.</p>
+<p>If we restrict to the top 10, the RSME is as low as 2.2. Pretty neat!</p>
+<table>
+<thead>
+<tr>
+<th>rank</th>
+<th>team</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>0</td>
+<td>NZL</td>
+</tr>
+<tr>
+<td>1</td>
+<td>AUS</td>
+</tr>
+<tr>
+<td>2</td>
+<td>SAF</td>
+</tr>
+<tr>
+<td>3</td>
+<td>ENG</td>
+</tr>
+<tr>
+<td>4</td>
+<td>WAL</td>
+</tr>
+<tr>
+<td>5</td>
+<td>ARG</td>
+</tr>
+<tr>
+<td>6</td>
+<td>IRE</td>
+</tr>
+<tr>
+<td>7</td>
+<td>FRA</td>
+</tr>
+<tr>
+<td>8</td>
+<td>SCO</td>
+</tr>
+<tr>
+<td>9</td>
+<td>JAP</td>
+</tr>
+<tr>
+<td>10</td>
+<td>FIJ</td>
+</tr>
+<tr>
+<td>11</td>
+<td>GEO</td>
+</tr>
+<tr>
+<td>12</td>
+<td>TON</td>
+</tr>
+<tr>
+<td>13</td>
+<td>ITA</td>
+</tr>
+<tr>
+<td>14</td>
+<td>SAM</td>
+</tr>
+<tr>
+<td>15</td>
+<td>ROM</td>
+</tr>
+<tr>
+<td>16</td>
+<td>USA</td>
+</tr>
+<tr>
+<td>17</td>
+<td>CAN</td>
+</tr>
+<tr>
+<td>18</td>
+<td>RUS</td>
+</tr>
+<tr>
+<td>19</td>
+<td>URU</td>
+</tr>
+<tr>
+<td>20</td>
+<td>NAM</td>
+</tr>
+<tr>
+<td>21</td>
+<td>SPA</td>
+</tr>
+<tr>
+<td>22</td>
+<td>BEL</td>
+</tr>
+<tr>
+<td>23</td>
+<td>GER</td>
+</tr>
+<tr>
+<td>24</td>
+<td>HON</td>
+</tr>
+<tr>
+<td>25</td>
+<td>KOR</td>
+</tr>
+<tr>
+<td>26</td>
+<td>CHI</td>
+</tr>
+<tr>
+<td>27</td>
+<td>KEN</td>
+</tr>
+<tr>
+<td>28</td>
+<td>UKR</td>
+</tr>
+<tr>
+<td>29</td>
+<td>POR</td>
+</tr>
+<tr>
+<td><em>Table 1. True rankings (accessed 2016-04-30)</em></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<p>Arguably, the first three positions are easy to estimate. New Zeland, Australia, South Africa and  are dominant teams, continusoly contending the highest spots in the chart. A possibly more interesting metric is to look at RMSE for postion 4-10 and 4-20, which is 2.7 and 2.73 respectively.</p>
+<h1>Considerations and next steps</h1>
+<p>All in all BTL's performance exceed my expectations.</p>
+<p>However, there are a number of issues with this approach. The most obvious one being that <em>home advantage</em> is an important factor in sport, which should be incorporated. Same goes for ties; they are a relatively rare event in rugby, but it would be nice to model this scenario for reuse in other sports. Another very important issue is that we are giving the same weight to a match that happened yesterday or 16 years ago.</p>
+<p>Finally,  MLE is likely to overfit when the training sample is small. Bayesian estimation techniques (and/or generalised linear models) are also something I plan to try out. </p>
+<script type="text/javascript">if (!document.getElementById('mathjaxscript_pelican_#%@#$@#')) {
+    var align = "center",
+        indent = "0em",
+        linebreak = "false";
+
+    if (false) {
+        align = (screen.width < 768) ? "left" : align;
+        indent = (screen.width < 768) ? "0em" : indent;
+        linebreak = (screen.width < 768) ? 'true' : linebreak;
+    }
+    
+    var mathjaxscript = document.createElement('script');
+    var location_protocol = (false) ? 'https' : document.location.protocol;
+    if (location_protocol !== 'http' && location_protocol !== 'https') location_protocol = 'https:';
+    mathjaxscript.id = 'mathjaxscript_pelican_#%@#$@#';
+    mathjaxscript.type = 'text/javascript'; 
+    mathjaxscript.src = location_protocol + '//cdn.mathjax.org/mathjax/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML';
+    mathjaxscript[(window.opera ? "innerHTML" : "text")] =
+        "MathJax.Hub.Config({" +
+        "    config: ['MMLorHTML.js']," +
+        "    TeX: { extensions: ['AMSmath.js','AMSsymbols.js','noErrors.js','noUndefined.js'], equationNumbers: { autoNumber: 'AMS' } }," +
+        "    jax: ['input/TeX','input/MathML','output/HTML-CSS']," +
+        "    extensions: ['tex2jax.js','mml2jax.js','MathMenu.js','MathZoom.js']," +
+        "    displayAlign: '"+ align +"'," +
+        "    displayIndent: '"+ indent +"'," +
+        "    showMathMenu: true," +
+        "    tex2jax: { " +
+        "        inlineMath: [ ['\\\\(','\\\\)'] ], " +
+        "        displayMath: [ ['$$','$$'] ]," +
+        "        processEscapes: true," +
+        "        preview: 'TeX'," +
+        "    }, " +
+        "    'HTML-CSS': { " +
+        "        styles: { '.MathJax_Display, .MathJax .mo, .MathJax .mi, .MathJax .mn': {color: 'inherit ! important'} }," +
+        "        linebreaks: { automatic: "+ linebreak +", width: '90% container' }," +
+        "    }, " +
+        "}); " +
+        "if ('default' !== 'default') {" +
+            "MathJax.Hub.Register.StartupHook('HTML-CSS Jax Ready',function () {" +
+                "var VARIANT = MathJax.OutputJax['HTML-CSS'].FONTDATA.VARIANT;" +
+                "VARIANT['normal'].fonts.unshift('MathJax_default');" +
+                "VARIANT['bold'].fonts.unshift('MathJax_default-bold');" +
+                "VARIANT['italic'].fonts.unshift('MathJax_default-italic');" +
+                "VARIANT['-tex-mathit'].fonts.unshift('MathJax_default-italic');" +
+            "});" +
+            "MathJax.Hub.Register.StartupHook('SVG Jax Ready',function () {" +
+                "var VARIANT = MathJax.OutputJax.SVG.FONTDATA.VARIANT;" +
+                "VARIANT['normal'].fonts.unshift('MathJax_default');" +
+                "VARIANT['bold'].fonts.unshift('MathJax_default-bold');" +
+                "VARIANT['italic'].fonts.unshift('MathJax_default-italic');" +
+                "VARIANT['-tex-mathit'].fonts.unshift('MathJax_default-italic');" +
+            "});" +
+        "}";
+    (document.body || document.getElementsByTagName('head')[0]).appendChild(mathjaxscript);
+}
+</script>
+    
+        </div>
+        
+<div class=footer>
+   <div class="contact">
+      <p>
+        &raquo;
+        <a href="mailto:gm@nowave.it">gm@nowave.it</a> |
+        <a href="http://github.com/gmodena" target="_blank">github.com/gmodena</a> |
+        <a href="http://twitter.com/gabriele_modena" target="_blank">http://twitter.com/gabriele_modena</a>
+        &laquo;
+      </p>
+    </div>
+  <p>&copy; Copyright <script language="JavaScript">var date = new Date(); document.write(date.getFullYear());</script> by Gabriele Modena</p>
+  <p>  
+    <a href="https://github.com/fjavieralba/flasky">Theme</a>  by <a href="http://fjavieralba.com">fjavieralba</a> (Modified)
+  </p> 
+<!--
+  <p>
+    <div class=social style="font-size: 27px;">
+      <ul>
+        <script language="JavaScript">
+          u = '';
+          s = '';
+          document.write('<a href=\"mailto:' + u + '@' + s + '\" target=\"_blank\">');
+        </script>
+            <li><i class="icon-envelope icon-large"></i> </li>
+        </a>
+        <a href="http://twitter.com/" target="_blank"> <li> <i class="icon-twitter-sign icon-large"> </li></i> </a>
+        <a href="" target="_blank"><li><i class="icon-linkedin-sign icon-large" ></i></li></a>
+        <a href="" target="_blank"> <li> <i class="icon-github-sign icon-large"></i> </li> </a>
+        <a href="" target="_blank"><li> <i class="icon-facebook-sign icon-large"></i></li> </a>
+        <a href="" target="_blank"><li><i class="icon-google-plus-sign icon-large"></i> </li> </a>
+        <a href="" target="_blank"><li><i class="icon-pinterest-sign icon-large"></i></li></a>
+
+
+        <a href="./feeds/all.rss.xml" rel="alternate" title="Recent Blog Posts"><li> <i class="icon-rss icon-large"></i> </li></a>
+      </ul>
+    </div>
+  </p>
+-->
+</div>    </div>
+  </body>
+</html>
