@@ -25,7 +25,7 @@
     <h1 class="title"> Learning rugby world rankings</h1>
     <p class=date> Tue 03 May 2016 </p>
     <p><em>For the purpose of this post: rugby = rugby union</em></p>
-<p>When trying to <a href="http://http://rwc2015.nowave.it">predict rugby outcomes</a>, a reasonable idea seemed to be using teams' position in world rankings as a feature. Ideally, my goal was to have a <em>rank at time <span class="math">\(t\)</span></em> feature, so that eg. when validating the model by predicting outcomes of the 2011 world cup, I could use 2011 rankings. Easier said than done.</p>
+<p>When trying to <a href="http://rwc2015.nowave.it">predict rugby outcomes</a>, a reasonable idea seemed to be using teams' position in world rankings as a feature. Ideally, my goal was to have a <em>rank at time <span class="math">\(t\)</span></em> feature, so that eg. when validating the model by predicting outcomes of the 2011 world cup, I could use 2011 rankings. Easier said than done.</p>
 <h1>The point exchange system</h1>
 <p>All World Rugby member countries are assigned a rating that is a number in the range of 0 to 100. The rating is calculated using a <em>points exchange</em> system, where a team can move up or down in ranking based on its performance. Since scraping historical data is not an option, why not implement the points exchange algorithm?</p>
 <p><a href="http://www.worldrugby.org/rankings/explanation">www.worldrugby.org</a> gives an explanation of how the ranking is generated. This comes with a degree of magic that is are the "rating gap" coefficient, other seemingly arbitrary multiplicative factors.  </p>
@@ -442,4 +442,26 @@
 -->
 </div>    </div>
   </body>
+  <script>		
+  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){		
+   (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),		
+   m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)		
+    })(window,document,'script','//www.google-analytics.com/analytics.js','ga');		
+ 
+   ga('create', 'UA-56891536-1', 'auto');		
+   ga('send', 'pageview');		
+   
+   /**
+    * Function that tracks a click on an outbound link in Google Analytics.
+    * This function takes a valid URL string as an argument, and uses that URL string
+    * as the event label.
+    */
+    var trackOutboundLink = function(url) {
+       ga('send', 'event', 'outbound', 'click', url, {'hitCallback':
+         function () {
+         document.location = url;
+         }
+       });
+    }
+</script>
 </html>
