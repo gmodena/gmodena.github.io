@@ -30,7 +30,7 @@
 <p>All World Rugby member countries are assigned a rating that is a number in the range of 0 to 100. The rating is calculated using a <em>points exchange</em> system, where a team can move up or down in ranking based on its performance. Since scraping historical data is not an option, why not implement the points exchange algorithm?</p>
 <p><a href="http://www.worldrugby.org/rankings/explanation">www.worldrugby.org</a> gives an explanation of how the ranking is generated. This comes with a degree of magic that is are the "rating gap" coefficient, other seemingly arbitrary multiplicative factors.  </p>
 <p>This system does not strike me as particularly intuitive and attempts to implement the algorithm lead to results inconsistent with the expected ones. Nor have I been able to find and off the shelf satisfactory implementation.</p>
-<p>After a couple of evenings spend debugging and tuning coefficients, it seemed appropriate to look at this as a learning from data problem.</p>
+<p>After a couple of evenings spent debugging and tuning coefficients, it seemed appropriate to look at this as a learning from data problem.</p>
 <p>In a machine learning framework, we want to estimate some latent strength <span class="math">\(\alpha_i\)</span> and <span class="math">\(\alpha_j\)</span> of team <span class="math">\(i\)</span> and <span class="math">\(j\)</span> teams, based on a dataset of past outcomes in <span class="math">\(n\)</span> matches; by doing a pairwise comparison for all teams, we can determine how strong they are relatively to each other. </p>
 <h1>Bradley-Terry (Luce) models</h1>
 <p>The Bradley–Terry-Luce (BTL) is a well-known family of probability models for pairwise comparisons, that date back to the 1920s. The canonical formulation states that given a pair of items <span class="math">\(i\)</span> and <span class="math">\(j\)</span>, we can estimate the probability that the pairwise comparison <span class="math">\(i &gt; j\)</span>  (read this as "i outperforms j") as</p>
@@ -65,7 +65,8 @@
 </pre></div>
 
 
-<p>and <code>X</code> is a matrix of game outcomes. Each row is a triple <span class="math">\(i, j, n\)</span>, where <span class="math">\(n\)</span> is the number of times team <span class="math">\(i\)</span> has defeated team <span class="math">\(j\)</span>.  Note that we are considering both <span class="math">\(i\)</span> vs <span class="math">\(j\)</span> and <span class="math">\(j\)</span> vs. <span class="math">\(i\)</span>,  although we are not incorporating home advantage in our model.</p>
+<p>and <code>X</code> is a matrix of game outcomes. Each row is a triple <span class="math">\(i, j, n\)</span>, where <span class="math">\(n\)</span> is the number of times team <span class="math">\(i\)</span> has defeated team <span class="math">\(j\)</span>. Note that we are allowing entries for both <span class="math">\(i\)</span> vs <span class="math">\(j\)</span> and <span class="math">\(j\)</span> vs. <span class="math">\(i\)</span>.
+
 <p>Finally, we minimize <code>loglikelihood(m, X)</code> with</p>
 <div class="highlight"><pre><span class="kn">from</span> <span class="nn">scipy.optimize</span> <span class="kn">import</span> <span class="n">minimize</span>
 
@@ -203,7 +204,7 @@
 <p>How does the model compare to the official World Rugby rankings?</p>
 <p>For <span class="math">\(n\)</span> teams let</p>
 <p><span class="math">\(RMSE  = \sqrt{ \frac{ \sum_{i=0}^n (y_i - \hat{y}_i )^2 }{n} }\)</span></p>
-<p>be our evaluation metric of choice. <span class="math">\(y_i\)</span> is the position of team <span class="math">\(i\)</span> in  World Rugby rankings, while <span class="math">\(\hat{y}_i\)</span> is the position predicted bt BTL.</p>
+<p>be our evaluation metric of choice. <span class="math">\(y_i\)</span> is the position of team <span class="math">\(i\)</span> in  World Rugby rankings, while <span class="math">\(\hat{y}_i\)</span> is the position predicted by BTL.</p>
 <p>The RMSE of BTL for the estimated top 20 teams is ~2.50. Not perfect, but, as it turns out it, good enough to feed a predictive model.</p>
 <p>If we restrict to the top 10, the RSME is as low as 2.2. Pretty neat!</p>
 <table>
@@ -342,7 +343,7 @@
 </table>
 <p>Arguably, the first three positions are easy to estimate. New Zeland, Australia, South Africa and  are dominant teams, continuously contending the highest spots in the chart. A possibly more interesting metric is to look at RMSE for position 4-10 and 4-20, which is 2.7 and 2.73 respectively.</p>
 <h1>Considerations and next steps</h1>
-<p>All in all BTL's performance exceed my expectations.</p>
+<p>All in all BTL's performance exceeded my expectations.</p>
 <p>However, there are a number of issues with this approach. The most obvious one being that <em>home advantage</em> is an important factor in sport, which should be incorporated. Same goes for ties; they are a relatively rare event in rugby, but it would be nice to model this scenario for reuse in other sports. Another very important issue is that we are giving the same weight to a match that happened yesterday or 16 years ago.</p>
 <p>Finally,  MLE is likely to overfit when the training sample is small. Bayesian estimation techniques (and/or generalized linear models) are also something I plan to try out. </p>
 <script type="text/javascript">if (!document.getElementById('mathjaxscript_pelican_#%@#$@#')) {
