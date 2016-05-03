@@ -203,7 +203,7 @@
 <h2>Evaluation</h2>
 <p>How does the model compare to the official World Rugby rankings?</p>
 <p>For <span class="math">\(n\)</span> teams let</p>
-<p><span class="math">\(RMSE  = \sqrt{ \frac{ \sum_{i=0}^n (y_i - \hat{y}_i )^2 }{n} }\)</span></p>
+<p><span class="math">\(RMSE  = \sqrt{ \frac{ \sum_{i=1}^n (y_i - \hat{y}_i )^2 }{n} }\)</span></p>
 <p>be our evaluation metric of choice. <span class="math">\(y_i\)</span> is the position of team <span class="math">\(i\)</span> in  World Rugby rankings, while <span class="math">\(\hat{y}_i\)</span> is the position predicted by BTL.</p>
 <p>The RMSE of BTL for the estimated top 20 teams is ~2.50. Not perfect, but, as it turns out it, good enough to feed a predictive model.</p>
 <p>If we restrict to the top 10, the RSME is as low as 2.2. Pretty neat!</p>
@@ -341,7 +341,7 @@
 </tr>
 </tbody>
 </table>
-<p>Arguably, the first three positions are easy to estimate. New Zeland, Australia, South Africa and  are dominant teams, continuously contending the highest spots in the chart. A possibly more interesting metric is to look at RMSE for position 4-10 and 4-20, which is 2.7 and 2.73 respectively.</p>
+<p>Arguably, the first three positions are easy to estimate. New Zeland, Australia, South Africa and  are dominant teams, continuously contending the highest spots in the chart. A possibly more interesting metric is to look at RMSE for positions 4-10 and 4-20, which is 2.7 and 2.73 respectively.</p>
 <h1>Considerations and next steps</h1>
 <p>All in all BTL's performance exceeded my expectations.</p>
 <p>However, there are a number of issues with this approach. The most obvious one being that <em>home advantage</em> is an important factor in sport, which should be incorporated. Same goes for ties; they are a relatively rare event in rugby, but it would be nice to model this scenario for reuse in other sports. Another very important issue is that we are giving the same weight to a match that happened yesterday or 16 years ago.</p>
