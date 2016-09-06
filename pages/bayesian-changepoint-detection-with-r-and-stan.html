@@ -189,7 +189,7 @@ plot<span class="p">(</span>x<span class="p">,</span> type<span class="o">=</spa
 1. Translate a model in Stan code to C++ code
 2. Compile the C++ code to a dynamic shared object (DSO) and load the DSO
 3. Sample given some user-specified data and other settings</p>
-<p>The funtion returns an S4 object of class <code>stanfit</code>. We can use methods such as <code>print</code> and<code>plot</code> (and <code>pairs</code>) to checkout the fitted results.</p>
+<p>The function returns an S4 object of class <code>stanfit</code>. We can use methods such as <code>print</code> and<code>plot</code> (and <code>pairs</code>) to checkout the fitted results.</p>
 <div class="highlight"><pre>fit <span class="o">&lt;-</span> stan<span class="p">(</span>
   file <span class="o">=</span> <span class="s">&quot;changepoint.stan&quot;</span><span class="p">,</span>  
   data <span class="o">=</span> <span class="kt">list</span><span class="p">(</span>D <span class="o">=</span> x<span class="p">,</span> N<span class="o">=</span><span class="kp">length</span><span class="p">(</span>x<span class="p">)),</span>    
