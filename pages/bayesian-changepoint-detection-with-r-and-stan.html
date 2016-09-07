@@ -55,9 +55,9 @@
 <div class="math">$$ \sigma_2 \sim \mathcal{N}(\mu_{\sigma_2}, \sigma_{\sigma_2})$$</div>
 <div class="math">$$ d_n \sim \begin{cases} \mathcal{N}(\mu_1, \sigma_1) &amp; \mbox{if } n  \lt \tau \\ \mathcal{N}(\mu_2, \sigma_2), &amp; \mbox{if } n  \geq \tau \end{cases}$$</div>
 <p>In many practical applications, a closed form solution for the posterior is hard to derive (eg. the integral is hard, or impossible to calculate), and approximation methods such as  <a href="https://en.wikipedia.org/wiki/Markov_chain_Monte_Carlo">Markov Chain Monte Carlo</a> (MCMC) are required.</p>
-<p>In the reminder of this document we'll code this model as a <code>stan</code> program, and fit the model with  MCMC to calculate the posterior probability <span class="math">\(P(\tau |D, \mu_1, \sigma_1, \mu_2, \sigma_2)\)</span>.</p>
+<p>In the reminder of this document we'll code this model as a <code>stan</code> program, and fit the model with  MCMC to calculate the posterior probability <span class="math">\(P(\tau, \mu_1, \sigma_1, \mu_2, \sigma_2 |D)\)</span>.</p>
 <h3>Stan</h3>
-<p><a href="http://mc-stan.org">stan</a> is a C++ library that comes with a domain specific modelling language very similar to statistical notation. Stan can help us to perform the Bayesian analysis steps, including MCMC inference (and more advanced techniques). The model that I will illustrate in the remainder of this document, is an adaptation of the <a href="https://pymc-devs.github.io/pymc/tutorial.html">Coal Mine Disaster</a> example from <a href="https://github.com/stan-dev/stan/releases/download/v2.12.0/stan-reference-2.12.0.pdf">Stan's manual</a> Section 12. The full code of this model can be found at <a href="https://gist.github.com/gmodena/0f316232aa2e9f7b6fc76b49f14bfb31">https://gist.github.com/gmodena/0f316232aa2e9f7b6fc76b49f14bfb31</a>.</p>
+<p><a href="http://mc-stan.org">stan</a> is a C++ library that comes with a domain specific modelling language very similar to statistical notation. Stan can help us to perform the Bayesian analysis steps, including MCMC inference (and more advanced techniques). The model that I will illustrate in the remainder of this document, is an adaptation of the <a href="https://pymc-devs.github.io/pymc/tutorial.html">Coal Mine Distater</a> example from <a href="https://github.com/stan-dev/stan/releases/download/v2.12.0/stan-reference-2.12.0.pdf">Stan's manual</a> Section 12. The full code of this model can be found at <a href="https://gist.github.com/gmodena/0f316232aa2e9f7b6fc76b49f14bfb31">https://gist.github.com/gmodena/0f316232aa2e9f7b6fc76b49f14bfb31</a>.</p>
 <p>A stan program is structured in blocks of code. Each block defines: 
 1. the data
 2. the parameters of our model
@@ -127,7 +127,7 @@ transformed parameters {
 </pre></div>
 
 
-<p>What about the posterior? This is where some of Stan's magic kicks in. At each iteration of MCMC sampling after convergence, <span class="math">\(\mu_1, \sigma_1, \mu_2, \sigma_2\)</span> are drawn from <span class="math">\(P( \mu_1, \sigma_1, \mu_2, \sigma_2 | D)\)</span>, and <span class="math">\(P(\tau| \mu_1, \sigma_1, \mu_2, \sigma_2)\)</span> is calculated based on the local unnormalized value of <code>log_p</code>. As a final step <span class="math">\(P(\tau| \mu_1, \sigma_1, \mu_2, \sigma_2)\)</span> is normalized by averaging over all draws. More details on this step can be found in Stan's manual.</p>
+<p>What about the posterior? This is where some of Stan's magic kicks in. At each iteration of MCMC sampling after convergence, <span class="math">\(\mu_1, \sigma_1, \mu_2, \sigma_2\)</span> are drawn from <span class="math">\(P( \mu_1, \sigma_1, \mu_2, \sigma_2 | D)\)</span>, and <span class="math">\(P(\tau| \mu_1, \sigma_1, \mu_2, \sigma_2, D)\)</span> is calculated based on the local unnormalized value of <code>log_p</code>. As a final step <span class="math">\(P(\tau | \mu_1, \sigma_1, \mu_2, \sigma_2, D)\)</span> is normalized by averaging over all draws to obtain <span class="math">\(P(\tau|D)\)</span>. More details on this step can be found in Stan's manual.</p>
 <h3>Discrete sampling</h3>
 <p>The <code>generated quantities</code> block allows for postprocessing. We can use it to draw a discrete sampling of <code>tau</code> at each iteration using the <code>categorical_rng</code> probability distribution. At each iteration we draw a value of <code>tau</code>, and later on, we'll look at the histogram of draws to determine the most likely changepoint as the most frequent <code>tau</code>.</p>
 <div class="highlight"><pre>generated quantities {
@@ -473,7 +473,7 @@ plot<span class="p">(</span>x<span class="p">,</span> type<span class="o">=</spa
 ## tau        34832    1
 ## lp__       18036    1
 ## 
-## Samples were drawn using NUTS(diag_e) at Wed Sep  7 11:05:57 2016.
+## Samples were drawn using NUTS(diag_e) at Wed Sep  7 11:16:46 2016.
 ## For each parameter, n_eff is a crude measure of effective sample size,
 ## and Rhat is the potential scale reduction factor on split chains (at 
 ## convergence, Rhat=1).
@@ -502,7 +502,7 @@ the discrete values of <code>tau</code></p>
 ##      mean se_mean   sd 2.5% 25% 50% 75% 97.5% n_eff Rhat
 ## tau 42.35    0.01 1.58   40  41  42  43    46 34832    1
 ## 
-## Samples were drawn using NUTS(diag_e) at Wed Sep  7 11:05:57 2016.
+## Samples were drawn using NUTS(diag_e) at Wed Sep  7 11:16:46 2016.
 ## For each parameter, n_eff is a crude measure of effective sample size,
 ## and Rhat is the potential scale reduction factor on split chains (at 
 ## convergence, Rhat=1).
