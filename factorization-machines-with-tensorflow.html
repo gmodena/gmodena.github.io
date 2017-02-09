@@ -261,7 +261,7 @@ We shuffle data (<code>np.random.shuffle</code>), to avoid biasing the gradient.
 
 <h3>Experiments</h3>
 <p>To get a feeling of the overall perfomance and correctness of the model, I trained and tested FMs on the <a href="https://grouplens.org/datasets/movielens/100k/">movielens 100k dataset</a>.
-The goal is to predict the rating of each move;  I trained on <code>ua.base</code> portion of the dataset, and used <code>ua.test</code> to test. After one-hot-encoding categorical variables, I obtained a <span class="math">\(90570
+The goal is to predict the rating of each movie;  I trained on <code>ua.base</code> portion of the dataset, and used <code>ua.test</code> to test. After one-hot-encoding categorical variables, I obtained a <span class="math">\(90570
  \times 2623\)</span> design matrix for the training set, and <span class="math">\(9430 \times 2623\)</span> for the test set.</p>
 <p>I trained a model using the <a href="http://sebastianruder.com/optimizing-gradient-descent/index.html#adam">adam</a> optimizer, with <code>learning_rate</code> initalized to <span class="math">\(0.01\)</span>. I built a model with <span class="math">\(20\)</span> factors, with adam running for <span class="math">\(100\)</span> iterations. With this setting I obtained the following:</p>
 <ul>
