@@ -76,7 +76,7 @@ The canonical approach is to suggest new movies (or any type of item), based on 
 Model parameters can be grouped, and each group can be assigned an independent regularization value <span class="math">\(\lambda\)</span>. The same holds for <span class="math">\(\textbf{w}\)</span> and <span class="math">\(w_0\)</span>, 
 and factorization layers <span class="math">\(f \in \{1,...,k\}\)</span>. In practice, using many independent regularization values will introduce substantial computational overhead.</p>
 <p>In <a href="http://citeseerx.ist.psu.edu/viewdoc/download?doi=10.1.1.442.5724&amp;rep=rep1&amp;type=pdf">Rendle 2012</a> and related work, it is shown that FMs can be learnt by ALS or, 
-if we interpret them within a probabilistic framework, by MCMC sampling. For the purposes of this article I'll do gradient descent using <a href="http://sebastianruder.com/optimizing-gradient-descent/index.html#adagrad">adagrad</a> as the optimisation strategy of choice.</p>
+if we interpret them within a probabilistic framework, by MCMC sampling. For the purpose of this article I'll do gradient descent using <a href="http://sebastianruder.com/optimizing-gradient-descent/index.html#adagrad">adagrad</a> as the optimisation strategy of choice.</p>
 <h2>Tensorflow</h2>
 <p><a href="https://www.tensorflow.org">Tensorflow</a> is an open source numerical computation framework released by Google in 2015. It has gained popularity
 in the Deep Learning community, where it is used to model large neural networks. By simplifying things a lot, we can think of neural networks as a series of matrix multiplication operations.</p>
@@ -263,7 +263,7 @@ We shuffle data (<code>np.random.shuffle</code>), to avoid biasing the gradient.
 <p>To get a feeling of the overall perfomance and correctness of the model, I trained and tested FMs on the <a href="https://grouplens.org/datasets/movielens/100k/">movielens 100k dataset</a>.
 The goal is to predict the rating of each move;  I trained on <code>ua.base</code> portion of the dataset, and used <code>ua.test</code> to test. After one-hot-encoding categorical variables, I obtained a <span class="math">\(90570
  \times 2623\)</span> design matrix for the training set, and <span class="math">\(9430 \times 2623\)</span> for the test set.</p>
-<p>I trained a model using the <a href="http://sebastianruder.com/optimizing-gradient-descent/index.html#adam">adam</a> optimizer, with <code>learning_rate</code> initalized to <span class="math">\(0.01\)</span>. I built a model with <span class="math">\(20\)</span> factors, with adam running for <span class="math">\(100\)</span> iterations. With these setting I obtained the following:</p>
+<p>I trained a model using the <a href="http://sebastianruder.com/optimizing-gradient-descent/index.html#adam">adam</a> optimizer, with <code>learning_rate</code> initalized to <span class="math">\(0.01\)</span>. I built a model with <span class="math">\(20\)</span> factors, with adam running for <span class="math">\(100\)</span> iterations. With this setting I obtained the following:</p>
 <ul>
 <li>
 <p>MSE train:  <span class="math">\(0.779672\)</span></p>
