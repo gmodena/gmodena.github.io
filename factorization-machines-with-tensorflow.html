@@ -141,9 +141,9 @@ but for the purpose of this notes I'd rather be explicit about the Tensorflow AP
 won't be further modified by the backend; we use <code>Variable</code>s to hold bias, weights and factor layers. These are the parameters
 that will be updated when fitting the model.</p>
 <p>In the following code we compute <span class="math">\(WX\)</span> and use <code>reduce_sum()</code> to add together the row elements of the resulting <code>Tensor</code> (axis 1). <code>keep_dims</code> is set to <code>True</code> to ensure that input/output dimensions are respected.</p>
-<div class="highlight"><pre>        <span class="n">linear_terms</span> <span class="o">=</span> <span class="n">tf</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">w0</span><span class="p">,</span>
-                    <span class="n">tf</span><span class="o">.</span><span class="n">reduce_sum</span><span class="p">(</span>
-                        <span class="n">tf</span><span class="o">.</span><span class="n">multiply</span><span class="p">(</span><span class="n">W</span><span class="p">,</span> <span class="n">X</span><span class="p">),</span> <span class="mi">1</span><span class="p">,</span> <span class="n">keep_dims</span><span class="o">=</span><span class="bp">True</span><span class="p">))</span>
+<div class="highlight"><pre><span class="n">linear_terms</span> <span class="o">=</span> <span class="n">tf</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">w0</span><span class="p">,</span>
+        	<span class="n">tf</span><span class="o">.</span><span class="n">reduce_sum</span><span class="p">(</span>
+                <span class="n">tf</span><span class="o">.</span><span class="n">multiply</span><span class="p">(</span><span class="n">W</span><span class="p">,</span> <span class="n">X</span><span class="p">),</span> <span class="mi">1</span><span class="p">,</span> <span class="n">keep_dims</span><span class="o">=</span><span class="bp">True</span><span class="p">))</span>
 </pre></div>
 
 
