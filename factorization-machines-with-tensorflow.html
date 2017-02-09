@@ -27,7 +27,7 @@
     <p>I wanted to learn more about <a href="http://www.csie.ntu.edu.tw/~b97053/paper/Rendle2010FM.pdf">Factorization Machines</a>  and get a bit familiar with <a href="https://www.tensorflow.org">Tensorflow</a>. This article gives an example of how to prototype the former in the latter.</p>
 <h2>Introduction</h2>
 <p>The idea of Factorization Machines (FMs from now on) is to learn a polynomial kernel by representing high-order terms as a low-dimensional inner product of latent factor vectors. </p>
-<p>§The method gained notoriety in the early 2010s, when it was the winning solution in a few data mining competitions (KDD, Kaggle). Nowadays it is considered a solid framework for modeling highly sparse data. Similar features will end up being close together in the inner space embedding, making it possible to model infrequent interactions in the training data.
+<p>§The method gained notoriety in the early 2010s, when it was the winning solution in a few data mining competitions (KDD, Kaggle). Nowadays it is considered a solid framework for modeling highly sparse data. Similar features will end up being close together in an inner product space embedding, making it possible to model infrequent interactions in the training data.
 This makes the model very much suitable for tasks like click prediction and recommendation. FMs also rather versatile, and can mimic other factorization models by feature engineering.</p>
 <h2>The problem</h2>
 <p>I won't be original here. How would you go about recommending movies to a user?
