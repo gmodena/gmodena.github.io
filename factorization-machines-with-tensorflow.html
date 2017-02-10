@@ -272,7 +272,7 @@ The goal is to predict the rating of each movie;  I trained on <code>ua.base</co
 <p>MSE test:  <span class="math">\(0.907205352128\)</span></p>
 </li>
 </ul>
-<p>The numbers look pretty much in line with known performance in this benchmark. I trained the model on an AWS <code>p2.xlarge</code> instance both on CPU and GPU (Nvidia Tesla K80). My best of ten run times, training for 10 iterations, are 120s and 20s respectively. CPU performance might be impacted by the poor parallelism on this instance, but all in all the speed up of running FM on a GPU is not bad at all.</p>
+<p>The numbers look pretty much in line with known performance in this benchmark. FM uses gradient descent on a non-convex objective, but in practice when using adam on movielens I did not notice much sensitivity to local minima. I trained the model on an AWS <code>p2.xlarge</code> instance both on CPU and GPU (Nvidia Tesla K80). My best of ten run times, training for 10 iterations, are 120s and 20s respectively. CPU performance might be impacted by the poor parallelism on this instance, but all in all the speed up of running FM on a GPU is not bad at all.</p>
 <h2>Conclusion</h2>
 <p>In this article I gave a brief summary of Factorization Machines. I showed how to implement the model in a few lines of python in Tensorflow. I tested the model accuracy on movielens 100k, and reported results in line with known benchmarks. It would be nice to do a more thorough evaluation of the model, on larger datasets, and compare the performance with the reference <code>libfm</code> implementation.</p>
 <script type="text/javascript">if (!document.getElementById('mathjaxscript_pelican_#%@#$@#')) {
