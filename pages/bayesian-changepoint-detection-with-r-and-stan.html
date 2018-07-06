@@ -28,9 +28,10 @@
 </pre></div>
 
 
+<p><strong>Update 2017-03-19</strong>: added a reference in the Conclusion about improving runtime performance by tansforming parameters in linear time complexity (see <a href="https://github.com/gmodena/bayesian-changepoint/issues/1">https://github.com/gmodena/bayesian-changepoint/issues/1</a>).</p>
 <p>In this document, I'll review a Bayesian approach to detect a single changepoint in a timeseries. I'll implement a model using <a href="http://mc-stan.org">stan</a> and show how to interpret its output in R using the <a href="http://mc-stan.org/interfaces/rstan">rstan</a> package. The code for this article can be found at <a href="https://github.com/gmodena/bayesian-changepoint">https://github.com/gmodena/bayesian-changepoint</a>.</p>
 <h2>The frequentist approach</h2>
-<p>Let <span class="math">\(D = {d_1, ..., d_n}\)</span> be a time series with <span class="math">\(n\)</span> <em>normally distributed</em> data points. To determine whether a change of parameters <span class="math">\(\mu\)</span> and <span class="math">\(\sigma\)</span> at point <span class="math">\(\tau\)</span> is significant, one possible approach would be to perform a likelihood test. In this setting run a hypothesis test where the null hypothesis <span class="math">\(H_0\)</span> is <em>there is no changepoint in <span class="math">\(D\)</span></em>, and the alternate hypothesis <span class="math">\(H_1\)</span> is <em>there is at most one changepoint at <span class="math">\(\tau \in D\)</span></em><sup id="fnref:1"><a class="footnote-ref" href="#fn:1" rel="footnote">1</a></sup>.</p>
+<p>Let <span class="math">\(D = {d_1, ..., d_n}\)</span> be a time series with <span class="math">\(n\)</span> <em>normally distributed</em> data points. To determine whether a change of parameters <span class="math">\(\mu\)</span> and <span class="math">\(\sigma\)</span> at point <span class="math">\(\tau\)</span> is significant, one possible approach would be to perform a likelihood test. In this setting we run a hypothesis test where the null hypothesis <span class="math">\(H_0\)</span> is <em>there is no changepoint in <span class="math">\(D\)</span></em>, and the alternate hypothesis <span class="math">\(H_1\)</span> is <em>there is at most one changepoint at <span class="math">\(\tau \in D\)</span></em><sup id="fnref:1"><a class="footnote-ref" href="#fn:1" rel="footnote">1</a></sup>.</p>
 <p>More formally <span class="math">\(H_0\)</span> says that <span class="math">\(\forall n\)</span>  we have <span class="math">\(d_n \sim  \mathcal{N}(\mu, \sigma)\)</span> </p>
 <p>Where <span class="math">\(H_1\)</span> says that  <span class="math">\(\forall n\)</span></p>
 <div class="math">$$d_n \sim \begin{cases} \mathcal{N}(\mu_1, \sigma_1) &amp; \mbox{if } n  \lt \tau \\ \mathcal{N}(\mu_2, \sigma_2), &amp; \mbox{if } n  \geq \tau \end{cases}$$</div>
@@ -93,7 +94,7 @@ We require <code>D</code> to have at least one element (<code>int&lt;lower=1&gt;
 <p>Then we calculate the likelihood <span class="math">\(P(D|\mu_1, \sigma_1, \mu_2, \sigma_2) = \sum_{n=1}^N P(\tau, D | \mu_1, \sigma_1, \mu_2, \sigma_2) = \sum_{\tau=1}^N P(\tau) P(D|\tau, \mu_1, \sigma_1, \mu_2, \sigma_2)=\sum_{\tau=1}^N P(\tau) \prod_{n=1}^N P(d_n|\tau, \mu_1, \sigma_1, \mu_2, \sigma_2)\)</span>. Where <span class="math">\(P(D|\tau, \mu_1, \sigma_1, \mu_2, \sigma_2)\)</span> is a product of Gaussians. </p>
 <p>The <code>transformed parameters</code> block is used to process the <code>parameters</code> before calculating the posterior. In the block that follows we marginalise out <code>tau</code> and calculate <code>log_p(D | mu1, sd1, mu2, sd2)</code>. Since <code>stan</code> works in logarithmic scale, we'll have to take the sum of the log PDFs (<code>normal_lpdf</code>).</p>
 <div class="highlight"><pre>// TODO: we can calculate log_p(D | mu1, sd1, mu2, sd2) in 
-// linear time with dynamic programming
+// linear time with dynamic programming. See the Conclusion section.
 transformed parameters {
       vector[N] log_p;
       real mu;
@@ -204,6 +205,7 @@ plot<span class="p">(</span>x<span class="p">,</span> type<span class="o">=</spa
 </pre></div>
 
 
+
 <p>The parameters are self explanatory. Note that the variables naming in the <code>data</code> parameter should match the <code>data</code> block in the stan code. </p>
 <p><code>print</code> gives an overview of the parameters and the log posterior <code>log_p</code>. </p>
 <div class="highlight"><pre><span class="kp">print</span><span class="p">(</span>fit<span class="p">)</span>
@@ -215,265 +217,261 @@ plot<span class="p">(</span>x<span class="p">,</span> type<span class="o">=</spa
 ## post-warmup draws per chain=9000, total post-warmup draws=36000.
 ## 
 ##               mean se_mean    sd    2.5%     25%     50%     75%   97.5%
-## mu1          14.96    0.00  0.29   14.39   14.77   14.96   15.15   15.53
-## mu2          17.06    0.00  0.12   16.83   16.99   17.06   17.14   17.29
-## sigma1        1.88    0.00  0.21    1.52    1.73    1.86    2.00    2.35
+## mu1          14.96    0.00  0.28   14.41   14.77   14.96   15.15   15.52
+## mu2          17.06    0.00  0.11   16.83   16.99   17.06   17.14   17.29
+## sigma1        1.88    0.00  0.21    1.52    1.73    1.86    2.00    2.34
 ## sigma2        1.06    0.00  0.08    0.91    1.00    1.05    1.11    1.24
-## log_p[1]   -302.81    0.11 20.87 -349.03 -315.67 -300.92 -288.05 -267.29
-## log_p[2]   -304.03    0.11 20.94 -350.32 -316.94 -302.14 -289.22 -268.37
-## log_p[3]   -300.87    0.11 20.34 -345.95 -313.38 -299.02 -286.48 -266.25
-## log_p[4]   -300.45    0.11 20.20 -345.09 -312.88 -298.62 -286.20 -266.03
-## log_p[5]   -300.60    0.11 20.14 -345.10 -313.01 -298.81 -286.38 -266.29
-## log_p[6]   -300.28    0.11 20.01 -344.35 -312.61 -298.50 -286.12 -266.19
-## log_p[7]   -298.62    0.11 19.67 -341.85 -310.74 -296.88 -284.68 -265.05
-## log_p[8]   -299.96    0.11 19.75 -343.32 -312.10 -298.20 -285.98 -266.24
-## log_p[9]   -298.33    0.11 19.41 -340.94 -310.26 -296.59 -284.56 -265.13
-## log_p[10]  -299.86    0.11 19.47 -342.60 -311.84 -298.13 -286.10 -266.59
-## log_p[11]  -298.33    0.11 19.15 -340.39 -310.11 -296.61 -284.78 -265.63
-## log_p[12]  -299.48    0.11 19.22 -341.67 -311.32 -297.75 -285.88 -266.64
-## log_p[13]  -300.98    0.11 19.24 -343.27 -312.86 -299.26 -287.36 -268.16
-## log_p[14]  -294.38    0.10 18.02 -334.02 -305.47 -292.72 -281.61 -263.72
-## log_p[15]  -292.19    0.10 17.59 -330.95 -302.99 -290.58 -279.71 -262.30
-## log_p[16]  -290.45    0.09 17.24 -328.39 -301.02 -288.85 -278.22 -261.11
-## log_p[17]  -290.61    0.09 17.19 -328.44 -301.18 -289.04 -278.43 -261.35
-## log_p[18]  -288.40    0.09 16.76 -325.22 -298.70 -286.85 -276.51 -259.89
-## log_p[19]  -274.69    0.08 14.20 -306.21 -283.33 -273.27 -264.57 -250.84
-## log_p[20]  -262.35    0.07 11.93 -289.10 -269.60 -261.07 -253.85 -242.59
-## log_p[21]  -263.52    0.07 12.00 -290.37 -270.82 -262.24 -254.98 -243.63
-## log_p[22]  -261.24    0.06 11.55 -287.13 -268.23 -259.97 -253.01 -242.15
-## log_p[23]  -252.67    0.05 10.00 -275.22 -258.67 -251.52 -245.55 -236.40
-## log_p[24]  -250.81    0.05  9.62 -272.56 -256.57 -249.68 -243.95 -235.19
-## log_p[25]  -251.87    0.05  9.68 -273.73 -257.68 -250.73 -244.96 -236.11
-## log_p[26]  -253.39    0.05  9.76 -275.43 -259.28 -252.25 -246.44 -237.43
-## log_p[27]  -250.69    0.05  9.24 -271.55 -256.24 -249.58 -244.10 -235.69
-## log_p[28]  -248.57    0.05  8.82 -268.55 -253.84 -247.48 -242.27 -234.32
-## log_p[29]  -240.10    0.04  7.28 -256.84 -244.39 -239.13 -234.87 -228.58
-## log_p[30]  -239.90    0.04  7.17 -256.37 -244.12 -238.93 -234.76 -228.58
-## log_p[31]  -236.46    0.04  6.53 -251.54 -240.27 -235.54 -231.75 -226.30
-## log_p[32]  -236.25    0.04  6.42 -251.10 -239.99 -235.33 -231.63 -226.25
-## log_p[33]  -236.54    0.04  6.39 -251.31 -240.26 -235.65 -231.94 -226.58
-## log_p[34]  -237.37    0.04  6.44 -252.22 -241.13 -236.49 -232.74 -227.30
-## log_p[35]  -234.04    0.03  5.82 -247.59 -237.41 -233.22 -229.83 -225.05
-## log_p[36]  -233.94    0.03  5.75 -247.32 -237.24 -233.13 -229.79 -225.04
-## log_p[37]  -225.71    0.02  4.28 -235.90 -228.09 -224.99 -222.59 -219.47
-## log_p[38]  -221.72    0.02  3.58 -230.42 -223.68 -221.08 -219.09 -216.70
-## log_p[39]  -217.47    0.02  2.88 -224.61 -218.98 -216.91 -215.36 -213.64
-## log_p[40]  -205.29    0.01  1.43 -208.96 -205.97 -204.96 -204.25 -203.56
-## log_p[41]  -204.04    0.01  1.41 -207.65 -204.72 -203.71 -203.01 -202.33
-## log_p[42]  -203.24    0.01  1.45 -206.93 -203.94 -202.89 -202.18 -201.49
-## log_p[43]  -204.11    0.01  1.46 -207.83 -204.82 -203.77 -203.05 -202.35
-## log_p[44]  -205.63    0.01  1.47 -209.37 -206.34 -205.28 -204.55 -203.86
-## log_p[45]  -206.09    0.01  1.52 -209.95 -206.82 -205.73 -204.98 -204.26
-## log_p[46]  -205.60    0.01  1.58 -209.63 -206.36 -205.22 -204.43 -203.68
-## log_p[47]  -207.02    0.01  1.64 -211.17 -207.80 -206.64 -205.82 -205.04
-## log_p[48]  -207.38    0.01  1.72 -211.72 -208.20 -206.98 -206.12 -205.29
-## log_p[49]  -208.83    0.01  1.85 -213.52 -209.71 -208.40 -207.47 -206.58
-## log_p[50]  -209.63    0.01  1.94 -214.53 -210.56 -209.18 -208.20 -207.26
-## log_p[51]  -211.13    0.01  2.09 -216.46 -212.13 -210.64 -209.59 -208.56
-## log_p[52]  -212.50    0.01  2.24 -218.23 -213.59 -211.99 -210.86 -209.73
-## log_p[53]  -212.89    0.01  2.32 -218.81 -214.02 -212.37 -211.19 -210.00
-## log_p[54]  -214.29    0.02  2.61 -220.91 -215.57 -213.72 -212.37 -211.01
-## log_p[55]  -215.79    0.02  2.82 -222.92 -217.18 -215.18 -213.72 -212.20
-## log_p[56]  -217.03    0.02  2.98 -224.55 -218.52 -216.39 -214.85 -213.20
-## log_p[57]  -218.39    0.02  3.16 -226.31 -219.98 -217.72 -216.06 -214.27
-## log_p[58]  -219.89    0.02  3.40 -228.36 -221.63 -219.19 -217.40 -215.40
-## log_p[59]  -221.13    0.02  3.57 -229.99 -222.97 -220.42 -218.53 -216.36
-## log_p[60]  -216.84    0.02  3.52 -225.59 -218.64 -216.14 -214.28 -212.16
-## log_p[61]  -218.20    0.02  3.69 -227.35 -220.10 -217.47 -215.51 -213.25
-## log_p[62]  -219.06    0.02  3.80 -228.46 -221.03 -218.32 -216.29 -213.93
-## log_p[63]  -220.37    0.02  3.97 -230.12 -222.44 -219.60 -217.47 -214.98
-## log_p[64]  -221.85    0.02  4.20 -232.13 -224.05 -221.05 -218.79 -216.11
-## log_p[65]  -223.31    0.03  4.54 -234.47 -225.71 -222.47 -220.00 -217.05
-## log_p[66]  -223.77    0.03  4.62 -235.09 -226.24 -222.93 -220.40 -217.37
-## log_p[67]  -225.27    0.03  4.97 -237.40 -227.91 -224.39 -221.65 -218.32
-## log_p[68]  -226.65    0.03  5.17 -239.24 -229.41 -225.75 -222.89 -219.36
-## log_p[69]  -228.18    0.03  5.48 -241.47 -231.11 -227.24 -224.19 -220.39
-## log_p[70]  -229.72    0.03  5.77 -243.71 -232.81 -228.74 -225.51 -221.44
-## log_p[71]  -231.23    0.03  6.04 -245.88 -234.46 -230.22 -226.82 -222.52
-## log_p[72]  -231.25    0.03  6.07 -245.92 -234.53 -230.25 -226.84 -222.48
-## log_p[73]  -232.37    0.03  6.22 -247.36 -235.73 -231.34 -227.85 -223.36
-## log_p[74]  -233.86    0.04  6.47 -249.44 -237.36 -232.81 -229.16 -224.43
-## log_p[75]  -234.02    0.04  6.52 -249.68 -237.56 -232.96 -229.29 -224.51
-## log_p[76]  -234.70    0.04  6.61 -250.57 -238.31 -233.64 -229.92 -225.03
-## log_p[77]  -236.17    0.04  6.86 -252.63 -239.92 -235.10 -231.22 -226.09
-## log_p[78]  -237.69    0.04  7.13 -254.77 -241.60 -236.57 -232.55 -227.17
-## log_p[79]  -239.13    0.04  7.36 -256.75 -243.16 -238.00 -233.82 -228.22
-## log_p[80]  -239.38    0.04  7.42 -257.06 -243.46 -238.26 -234.04 -228.37
-## log_p[81]  -239.33    0.04  7.45 -257.11 -243.44 -238.20 -233.95 -228.23
-## log_p[82]  -240.75    0.04  7.85 -259.48 -245.07 -239.58 -235.11 -229.06
-## log_p[83]  -242.10    0.04  8.05 -261.24 -246.54 -240.90 -236.31 -230.08
-## log_p[84]  -243.34    0.04  8.22 -262.89 -247.88 -242.14 -237.42 -231.00
-## log_p[85]  -244.43    0.05  8.37 -264.26 -249.07 -243.22 -238.42 -231.82
-## log_p[86]  -244.22    0.05  8.40 -264.11 -248.90 -243.02 -238.19 -231.55
-## log_p[87]  -245.71    0.05  8.65 -266.16 -250.51 -244.47 -239.50 -232.62
-## log_p[88]  -246.72    0.05  8.79 -267.43 -251.63 -245.48 -240.40 -233.38
-## log_p[89]  -247.76    0.05  8.93 -268.80 -252.75 -246.52 -241.34 -234.16
-## log_p[90]  -249.29    0.05  9.23 -271.00 -254.45 -248.01 -242.67 -235.22
-## log_p[91]  -250.82    0.05  9.52 -273.19 -256.13 -249.50 -244.00 -236.29
-## log_p[92]  -252.28    0.05  9.90 -275.55 -257.80 -250.93 -245.19 -237.14
-## log_p[93]  -253.04    0.05 10.00 -276.54 -258.62 -251.68 -245.90 -237.71
-## log_p[94]  -254.53    0.06 10.26 -278.63 -260.28 -253.14 -247.20 -238.76
-## log_p[95]  -256.00    0.06 10.64 -280.98 -261.95 -254.60 -248.39 -239.56
-## log_p[96]  -255.93    0.06 10.67 -280.96 -261.89 -254.51 -248.31 -239.51
-## log_p[97]  -256.22    0.06 10.73 -281.38 -262.22 -254.79 -248.57 -239.68
-## log_p[98]  -256.11    0.06 10.76 -281.34 -262.17 -254.70 -248.43 -239.54
-## log_p[99]  -255.45    0.06 10.76 -280.69 -261.52 -254.02 -247.76 -238.85
-## log_p[100] -256.69    0.06 10.94 -282.28 -262.86 -255.24 -248.87 -239.80
-## log_p[101] -258.18    0.06 11.20 -284.38 -264.50 -256.72 -250.18 -240.88
-## log_p[102] -259.70    0.06 11.54 -286.67 -266.19 -258.20 -251.47 -241.82
-## log_p[103] -261.23    0.06 11.86 -289.00 -267.89 -259.71 -252.77 -242.80
-## log_p[104] -261.32    0.06 11.90 -289.13 -268.03 -259.78 -252.82 -242.83
-## log_p[105] -262.57    0.07 12.37 -291.49 -269.51 -261.00 -253.71 -243.35
-## log_p[106] -263.11    0.07 12.45 -292.19 -270.10 -261.51 -254.20 -243.75
-## log_p[107] -264.36    0.07 12.63 -293.81 -271.46 -262.77 -255.34 -244.67
-## log_p[108] -265.17    0.07 12.74 -294.86 -272.33 -263.57 -256.08 -245.29
-## log_p[109] -266.26    0.07 12.89 -296.29 -273.53 -264.66 -257.07 -246.13
-## log_p[110] -267.57    0.07 13.08 -298.02 -274.96 -265.92 -258.25 -247.09
-## log_p[111] -268.83    0.07 13.27 -299.65 -276.35 -267.17 -259.39 -248.04
-## log_p[112] -270.00    0.07 13.43 -301.16 -277.60 -268.32 -260.45 -248.90
-## log_p[113] -271.25    0.07 13.62 -302.79 -279.01 -269.56 -261.59 -249.85
-## log_p[114] -272.00    0.07 13.72 -303.76 -279.83 -270.30 -262.25 -250.41
-## log_p[115] -272.72    0.08 13.83 -304.77 -280.61 -271.03 -262.90 -250.96
-## log_p[116] -271.69    0.08 13.81 -303.62 -279.57 -269.99 -261.86 -249.93
-## log_p[117] -272.54    0.08 13.93 -304.78 -280.50 -270.84 -262.63 -250.58
-## log_p[118] -273.25    0.08 14.04 -305.71 -281.30 -271.55 -263.30 -251.11
-## log_p[119] -273.68    0.08 14.64 -307.71 -282.01 -271.90 -263.25 -250.62
-## log_p[120] -273.19    0.08 14.65 -307.26 -281.54 -271.42 -262.78 -250.14
-## mu           17.06    0.00  0.12   16.83   16.99   17.06   17.14   17.29
-## sigma         1.06    0.00  0.08    0.91    1.00    1.05    1.11    1.24
+## log_p[1]   -302.90    0.11 20.78 -348.66 -315.55 -301.12 -288.10 -267.64
+## log_p[2]   -304.12    0.11 20.85 -349.99 -316.83 -302.34 -289.28 -268.64
+## log_p[3]   -300.95    0.11 20.25 -345.59 -313.24 -299.23 -286.53 -266.55
+## log_p[4]   -300.52    0.11 20.10 -344.85 -312.71 -298.82 -286.22 -266.43
+## log_p[5]   -300.68    0.11 20.05 -344.91 -312.83 -298.97 -286.41 -266.66
+## log_p[6]   -300.35    0.11 19.92 -344.32 -312.43 -298.66 -286.15 -266.54
+## log_p[7]   -298.69    0.11 19.58 -341.90 -310.53 -297.01 -284.72 -265.47
+## log_p[8]   -300.03    0.11 19.66 -343.38 -311.95 -298.35 -286.01 -266.64
+## log_p[9]   -298.40    0.10 19.32 -340.99 -310.13 -296.72 -284.62 -265.58
+## log_p[10]  -299.93    0.10 19.38 -342.60 -311.69 -298.27 -286.12 -266.97
+## log_p[11]  -298.40    0.10 19.06 -340.37 -309.95 -296.73 -284.81 -265.99
+## log_p[12]  -299.55    0.10 19.13 -341.74 -311.17 -297.88 -285.89 -266.98
+## log_p[13]  -301.05    0.10 19.15 -343.23 -312.67 -299.36 -287.40 -268.39
+## log_p[14]  -294.44    0.10 17.94 -334.00 -305.31 -292.83 -281.64 -263.96
+## log_p[15]  -292.25    0.09 17.51 -330.95 -302.83 -290.68 -279.74 -262.52
+## log_p[16]  -290.50    0.09 17.16 -328.46 -300.87 -288.96 -278.24 -261.40
+## log_p[17]  -290.66    0.09 17.11 -328.58 -301.00 -289.12 -278.42 -261.60
+## log_p[18]  -288.45    0.09 16.68 -325.40 -298.53 -286.94 -276.52 -260.15
+## log_p[19]  -274.73    0.08 14.14 -306.27 -283.23 -273.36 -264.57 -251.00
+## log_p[20]  -262.38    0.06 11.89 -289.14 -269.46 -261.17 -253.84 -242.74
+## log_p[21]  -263.55    0.06 11.96 -290.42 -270.68 -262.34 -254.96 -243.75
+## log_p[22]  -261.26    0.06 11.51 -287.18 -268.11 -260.06 -252.96 -242.25
+## log_p[23]  -252.69    0.05  9.96 -275.33 -258.57 -251.61 -245.50 -236.48
+## log_p[24]  -250.83    0.05  9.58 -272.64 -256.47 -249.76 -243.90 -235.28
+## log_p[25]  -251.89    0.05  9.64 -273.79 -257.56 -250.81 -244.92 -236.22
+## log_p[26]  -253.41    0.05  9.72 -275.52 -259.15 -252.35 -246.41 -237.62
+## log_p[27]  -250.71    0.05  9.20 -271.70 -256.12 -249.68 -244.07 -235.82
+## log_p[28]  -248.58    0.05  8.78 -268.65 -253.71 -247.57 -242.23 -234.44
+## log_p[29]  -240.11    0.04  7.26 -256.88 -244.29 -239.21 -234.84 -228.70
+## log_p[30]  -239.90    0.04  7.15 -256.43 -244.01 -239.00 -234.71 -228.68
+## log_p[31]  -236.46    0.04  6.51 -251.57 -240.17 -235.60 -231.70 -226.40
+## log_p[32]  -236.25    0.03  6.40 -251.11 -239.89 -235.39 -231.57 -226.35
+## log_p[33]  -236.54    0.03  6.37 -251.35 -240.19 -235.70 -231.89 -226.67
+## log_p[34]  -237.37    0.03  6.41 -252.30 -241.06 -236.53 -232.68 -227.40
+## log_p[35]  -234.04    0.03  5.80 -247.61 -237.33 -233.24 -229.79 -225.16
+## log_p[36]  -233.93    0.03  5.72 -247.32 -237.18 -233.15 -229.74 -225.15
+## log_p[37]  -225.70    0.02  4.26 -235.90 -228.02 -225.02 -222.56 -219.52
+## log_p[38]  -221.70    0.02  3.57 -230.38 -223.59 -221.08 -219.07 -216.72
+## log_p[39]  -217.44    0.02  2.86 -224.57 -218.90 -216.89 -215.34 -213.64
+## log_p[40]  -205.26    0.01  1.41 -208.88 -205.90 -204.92 -204.24 -203.56
+## log_p[41]  -204.00    0.01  1.39 -207.56 -204.65 -203.67 -202.99 -202.33
+## log_p[42]  -203.20    0.01  1.42 -206.81 -203.87 -202.86 -202.16 -201.48
+## log_p[43]  -204.07    0.01  1.43 -207.71 -204.74 -203.74 -203.04 -202.35
+## log_p[44]  -205.59    0.01  1.44 -209.28 -206.26 -205.26 -204.55 -203.86
+## log_p[45]  -206.05    0.01  1.48 -209.85 -206.74 -205.71 -204.97 -204.26
+## log_p[46]  -205.55    0.01  1.55 -209.52 -206.28 -205.18 -204.43 -203.67
+## log_p[47]  -206.98    0.01  1.61 -211.09 -207.73 -206.60 -205.81 -205.03
+## log_p[48]  -207.33    0.01  1.68 -211.60 -208.13 -206.94 -206.11 -205.28
+## log_p[49]  -208.79    0.01  1.81 -213.37 -209.64 -208.36 -207.47 -206.57
+## log_p[50]  -209.59    0.01  1.90 -214.36 -210.50 -209.15 -208.21 -207.26
+## log_p[51]  -211.09    0.01  2.05 -216.19 -212.08 -210.62 -209.59 -208.55
+## log_p[52]  -212.47    0.01  2.20 -217.94 -213.54 -211.96 -210.86 -209.72
+## log_p[53]  -212.86    0.01  2.28 -218.49 -213.98 -212.34 -211.18 -209.99
+## log_p[54]  -214.26    0.02  2.57 -220.67 -215.54 -213.69 -212.38 -210.99
+## log_p[55]  -215.75    0.02  2.78 -222.67 -217.15 -215.15 -213.72 -212.18
+## log_p[56]  -217.00    0.02  2.93 -224.29 -218.49 -216.37 -214.85 -213.19
+## log_p[57]  -218.35    0.02  3.12 -226.06 -219.95 -217.72 -216.06 -214.27
+## log_p[58]  -219.85    0.02  3.35 -228.10 -221.60 -219.19 -217.38 -215.40
+## log_p[59]  -221.10    0.02  3.52 -229.72 -222.95 -220.43 -218.50 -216.38
+## log_p[60]  -216.80    0.02  3.46 -225.33 -218.61 -216.11 -214.26 -212.14
+## log_p[61]  -218.16    0.02  3.64 -227.12 -220.07 -217.45 -215.49 -213.23
+## log_p[62]  -219.03    0.02  3.75 -228.23 -221.02 -218.30 -216.28 -213.92
+## log_p[63]  -220.33    0.02  3.92 -229.90 -222.42 -219.60 -217.44 -214.96
+## log_p[64]  -221.81    0.02  4.14 -231.93 -224.03 -221.04 -218.76 -216.09
+## log_p[65]  -223.28    0.02  4.48 -234.22 -225.69 -222.48 -219.98 -217.01
+## log_p[66]  -223.74    0.03  4.56 -234.85 -226.21 -222.94 -220.40 -217.33
+## log_p[67]  -225.24    0.03  4.90 -237.17 -227.90 -224.39 -221.65 -218.28
+## log_p[68]  -226.62    0.03  5.10 -238.98 -229.41 -225.75 -222.89 -219.34
+## log_p[69]  -228.15    0.03  5.41 -241.17 -231.11 -227.25 -224.21 -220.38
+## log_p[70]  -229.69    0.03  5.70 -243.38 -232.82 -228.76 -225.53 -221.44
+## log_p[71]  -231.20    0.03  5.96 -245.45 -234.51 -230.26 -226.85 -222.51
+## log_p[72]  -231.23    0.03  6.00 -245.55 -234.54 -230.28 -226.85 -222.48
+## log_p[73]  -232.34    0.03  6.15 -246.97 -235.75 -231.38 -227.84 -223.35
+## log_p[74]  -233.83    0.03  6.39 -249.02 -237.38 -232.85 -229.17 -224.41
+## log_p[75]  -233.99    0.04  6.44 -249.32 -237.57 -232.99 -229.28 -224.51
+## log_p[76]  -234.67    0.04  6.54 -250.22 -238.32 -233.64 -229.90 -225.02
+## log_p[77]  -236.15    0.04  6.78 -252.24 -239.95 -235.11 -231.20 -226.08
+## log_p[78]  -237.67    0.04  7.05 -254.35 -241.62 -236.61 -232.53 -227.15
+## log_p[79]  -239.11    0.04  7.28 -256.29 -243.21 -238.02 -233.81 -228.19
+## log_p[80]  -239.36    0.04  7.34 -256.68 -243.49 -238.26 -234.02 -228.36
+## log_p[81]  -239.30    0.04  7.37 -256.67 -243.47 -238.19 -233.94 -228.24
+## log_p[82]  -240.73    0.04  7.76 -259.06 -245.12 -239.59 -235.09 -229.04
+## log_p[83]  -242.08    0.04  7.96 -260.80 -246.58 -240.91 -236.29 -230.03
+## log_p[84]  -243.32    0.04  8.14 -262.41 -247.93 -242.14 -237.41 -230.97
+## log_p[85]  -244.41    0.05  8.29 -263.80 -249.12 -243.22 -238.40 -231.79
+## log_p[86]  -244.20    0.05  8.31 -263.62 -248.95 -243.01 -238.17 -231.55
+## log_p[87]  -245.69    0.05  8.56 -265.70 -250.59 -244.48 -239.49 -232.61
+## log_p[88]  -246.70    0.05  8.70 -267.06 -251.67 -245.48 -240.40 -233.37
+## log_p[89]  -247.74    0.05  8.84 -268.37 -252.79 -246.51 -241.33 -234.18
+## log_p[90]  -249.27    0.05  9.14 -270.61 -254.50 -248.02 -242.65 -235.20
+## log_p[91]  -250.80    0.05  9.42 -272.77 -256.20 -249.51 -243.98 -236.24
+## log_p[92]  -252.27    0.05  9.79 -275.06 -257.86 -250.97 -245.16 -237.10
+## log_p[93]  -253.02    0.05  9.90 -276.05 -258.69 -251.71 -245.86 -237.67
+## log_p[94]  -254.52    0.06 10.16 -278.07 -260.34 -253.19 -247.17 -238.71
+## log_p[95]  -255.99    0.06 10.54 -280.41 -262.03 -254.63 -248.36 -239.58
+## log_p[96]  -255.92    0.06 10.56 -280.39 -261.97 -254.53 -248.26 -239.47
+## log_p[97]  -256.20    0.06 10.62 -280.85 -262.30 -254.81 -248.53 -239.67
+## log_p[98]  -256.09    0.06 10.65 -280.81 -262.22 -254.69 -248.41 -239.52
+## log_p[99]  -255.43    0.06 10.65 -280.13 -261.57 -254.04 -247.73 -238.87
+## log_p[100] -256.67    0.06 10.83 -281.74 -262.91 -255.26 -248.85 -239.80
+## log_p[101] -258.17    0.06 11.09 -283.84 -264.57 -256.73 -250.16 -240.87
+## log_p[102] -259.69    0.06 11.43 -286.13 -266.28 -258.21 -251.46 -241.80
+## log_p[103] -261.22    0.06 11.74 -288.36 -267.98 -259.72 -252.75 -242.81
+## log_p[104] -261.31    0.06 11.79 -288.59 -268.12 -259.80 -252.81 -242.81
+## log_p[105] -262.56    0.07 12.25 -290.85 -269.62 -261.01 -253.70 -243.33
+## log_p[106] -263.09    0.07 12.33 -291.54 -270.23 -261.53 -254.20 -243.71
+## log_p[107] -264.35    0.07 12.51 -293.19 -271.57 -262.78 -255.31 -244.67
+## log_p[108] -265.16    0.07 12.62 -294.27 -272.46 -263.58 -256.06 -245.29
+## log_p[109] -266.25    0.07 12.77 -295.74 -273.63 -264.67 -257.07 -246.12
+## log_p[110] -267.56    0.07 12.96 -297.40 -275.05 -265.96 -258.24 -247.09
+## log_p[111] -268.82    0.07 13.14 -299.03 -276.42 -267.22 -259.36 -248.05
+## log_p[112] -269.99    0.07 13.31 -300.47 -277.70 -268.36 -260.41 -248.95
+## log_p[113] -271.25    0.07 13.49 -302.09 -279.07 -269.61 -261.55 -249.88
+## log_p[114] -271.99    0.07 13.60 -303.07 -279.91 -270.36 -262.21 -250.44
+## log_p[115] -272.72    0.07 13.70 -304.00 -280.70 -271.08 -262.86 -250.97
+## log_p[116] -271.68    0.07 13.68 -303.00 -279.66 -270.01 -261.82 -249.96
+## log_p[117] -272.53    0.07 13.80 -304.09 -280.58 -270.86 -262.59 -250.60
+## log_p[118] -273.24    0.08 13.91 -305.03 -281.37 -271.56 -263.23 -251.13
+## log_p[119] -273.67    0.08 14.50 -306.94 -282.10 -271.92 -263.22 -250.68
+## log_p[120] -273.19    0.08 14.51 -306.48 -281.64 -271.41 -262.73 -250.15
 ## tau          42.35    0.01  1.58   40.00   41.00   42.00   43.00   46.00
-## lp__       -204.30    0.01  1.38 -207.82 -204.97 -203.97 -203.30 -202.64
+## lp__       -204.26    0.01  1.35 -207.71 -204.90 -203.94 -203.29 -202.63
 ##            n_eff Rhat
-## mu1        32412    1
-## mu2        33381    1
-## sigma1     30766    1
-## sigma2     31256    1
-## log_p[1]   33219    1
-## log_p[2]   33226    1
-## log_p[3]   33221    1
-## log_p[4]   33213    1
-## log_p[5]   33207    1
-## log_p[6]   33198    1
-## log_p[7]   33188    1
-## log_p[8]   33200    1
-## log_p[9]   33189    1
-## log_p[10]  33219    1
-## log_p[11]  33208    1
-## log_p[12]  33214    1
-## log_p[13]  33257    1
-## log_p[14]  33270    1
-## log_p[15]  33260    1
-## log_p[16]  33248    1
-## log_p[17]  33239    1
-## log_p[18]  33227    1
-## log_p[19]  33307    1
-## log_p[20]  33384    1
-## log_p[21]  33396    1
-## log_p[22]  33376    1
-## log_p[23]  33403    1
-## log_p[24]  33371    1
-## log_p[25]  33380    1
-## log_p[26]  33440    1
-## log_p[27]  33406    1
-## log_p[28]  33363    1
-## log_p[29]  33322    1
-## log_p[30]  33277    1
-## log_p[31]  33157    1
-## log_p[32]  33094    1
-## log_p[33]  33055    1
-## log_p[34]  33054    1
-## log_p[35]  32855    1
-## log_p[36]  32774    1
-## log_p[37]  32029    1
-## log_p[38]  31102    1
-## log_p[39]  29393    1
-## log_p[40]  18902    1
-## log_p[41]  18044    1
-## log_p[42]  17955    1
-## log_p[43]  18091    1
-## log_p[44]  18602    1
-## log_p[45]  18959    1
-## log_p[46]  19281    1
-## log_p[47]  20100    1
-## log_p[48]  20650    1
-## log_p[49]  22295    1
-## log_p[50]  22928    1
-## log_p[51]  24266    1
-## log_p[52]  25344    1
-## log_p[53]  25627    1
-## log_p[54]  27340    1
-## log_p[55]  28317    1
-## log_p[56]  28882    1
-## log_p[57]  29478    1
-## log_p[58]  30167    1
-## log_p[59]  30541    1
-## log_p[60]  29702    1
-## log_p[61]  30130    1
-## log_p[62]  30306    1
-## log_p[63]  30640    1
-## log_p[64]  31050    1
-## log_p[65]  31594    1
-## log_p[66]  31601    1
-## log_p[67]  31996    1
-## log_p[68]  32191    1
-## log_p[69]  32450    1
-## log_p[70]  32661    1
-## log_p[71]  32827    1
-## log_p[72]  32774    1
-## log_p[73]  32848    1
-## log_p[74]  32981    1
-## log_p[75]  32944    1
-## log_p[76]  32957    1
-## log_p[77]  33072    1
-## log_p[78]  33185    1
-## log_p[79]  33271    1
-## log_p[80]  33244    1
-## log_p[81]  33193    1
-## log_p[82]  33311    1
-## log_p[83]  33371    1
-## log_p[84]  33417    1
-## log_p[85]  33448    1
-## log_p[86]  33396    1
-## log_p[87]  33462    1
-## log_p[88]  33484    1
-## log_p[89]  33504    1
-## log_p[90]  33572    1
-## log_p[91]  33628    1
-## log_p[92]  33685    1
-## log_p[93]  33688    1
-## log_p[94]  33729    1
-## log_p[95]  33774    1
-## log_p[96]  33742    1
-## log_p[97]  33725    1
-## log_p[98]  33691    1
-## log_p[99]  33636    1
-## log_p[100] 33661    1
-## log_p[101] 33698    1
-## log_p[102] 33739    1
-## log_p[103] 33775    1
-## log_p[104] 33753    1
-## log_p[105] 33782    1
-## log_p[106] 33776    1
-## log_p[107] 33794    1
-## log_p[108] 33797    1
-## log_p[109] 33808    1
-## log_p[110] 33826    1
-## log_p[111] 33842    1
-## log_p[112] 33851    1
-## log_p[113] 33861    1
-## log_p[114] 33853    1
-## log_p[115] 33845    1
-## log_p[116] 33795    1
-## log_p[117] 33791    1
-## log_p[118] 33783    1
-## log_p[119] 33824    1
-## log_p[120] 33793    1
-## mu         33381    1
-## sigma      31256    1
-## tau        34832    1
-## lp__       18036    1
+## mu1        33365    1
+## mu2        33456    1
+## sigma1     31036    1
+## sigma2     32798    1
+## log_p[1]   34223    1
+## log_p[2]   34221    1
+## log_p[3]   34226    1
+## log_p[4]   34224    1
+## log_p[5]   34222    1
+## log_p[6]   34219    1
+## log_p[7]   34219    1
+## log_p[8]   34217    1
+## log_p[9]   34216    1
+## log_p[10]  34217    1
+## log_p[11]  34216    1
+## log_p[12]  34213    1
+## log_p[13]  34218    1
+## log_p[14]  34233    1
+## log_p[15]  34233    1
+## log_p[16]  34231    1
+## log_p[17]  34225    1
+## log_p[18]  34223    1
+## log_p[19]  34275    1
+## log_p[20]  34320    1
+## log_p[21]  34317    1
+## log_p[22]  34313    1
+## log_p[23]  34328    1
+## log_p[24]  34314    1
+## log_p[25]  34310    1
+## log_p[26]  34320    1
+## log_p[27]  34303    1
+## log_p[28]  34278    1
+## log_p[29]  34226    1
+## log_p[30]  34194    1
+## log_p[31]  34101    1
+## log_p[32]  34051    1
+## log_p[33]  34013    1
+## log_p[34]  33996    1
+## log_p[35]  33827    1
+## log_p[36]  33751    1
+## log_p[37]  33044    1
+## log_p[38]  32126    1
+## log_p[39]  30367    1
+## log_p[40]  19283    1
+## log_p[41]  18333    1
+## log_p[42]  18209    1
+## log_p[43]  18258    1
+## log_p[44]  18721    1
+## log_p[45]  19020    1
+## log_p[46]  19344    1
+## log_p[47]  20089    1
+## log_p[48]  20607    1
+## log_p[49]  22288    1
+## log_p[50]  22898    1
+## log_p[51]  24299    1
+## log_p[52]  25417    1
+## log_p[53]  25660    1
+## log_p[54]  27566    1
+## log_p[55]  28612    1
+## log_p[56]  29193    1
+## log_p[57]  29818    1
+## log_p[58]  30746    1
+## log_p[59]  31074    1
+## log_p[60]  30480    1
+## log_p[61]  30862    1
+## log_p[62]  30996    1
+## log_p[63]  31286    1
+## log_p[64]  31663    1
+## log_p[65]  32215    1
+## log_p[66]  32203    1
+## log_p[67]  32619    1
+## log_p[68]  32781    1
+## log_p[69]  33044    1
+## log_p[70]  33248    1
+## log_p[71]  33397    1
+## log_p[72]  33340    1
+## log_p[73]  33381    1
+## log_p[74]  33496    1
+## log_p[75]  33450    1
+## log_p[76]  33439    1
+## log_p[77]  33537    1
+## log_p[78]  33642    1
+## log_p[79]  33709    1
+## log_p[80]  33672    1
+## log_p[81]  33620    1
+## log_p[82]  33775    1
+## log_p[83]  33812    1
+## log_p[84]  33836    1
+## log_p[85]  33845    1
+## log_p[86]  33796    1
+## log_p[87]  33852    1
+## log_p[88]  33853    1
+## log_p[89]  33856    1
+## log_p[90]  33924    1
+## log_p[91]  33978    1
+## log_p[92]  34059    1
+## log_p[93]  34046    1
+## log_p[94]  34080    1
+## log_p[95]  34145    1
+## log_p[96]  34115    1
+## log_p[97]  34091    1
+## log_p[98]  34060    1
+## log_p[99]  34020    1
+## log_p[100] 34027    1
+## log_p[101] 34058    1
+## log_p[102] 34111    1
+## log_p[103] 34151    1
+## log_p[104] 34127    1
+## log_p[105] 34197    1
+## log_p[106] 34182    1
+## log_p[107] 34186    1
+## log_p[108] 34175    1
+## log_p[109] 34173    1
+## log_p[110] 34178    1
+## log_p[111] 34181    1
+## log_p[112] 34180    1
+## log_p[113] 34182    1
+## log_p[114] 34170    1
+## log_p[115] 34158    1
+## log_p[116] 34129    1
+## log_p[117] 34119    1
+## log_p[118] 34107    1
+## log_p[119] 34206    1
+## log_p[120] 34183    1
+## tau        35669    1
+## lp__       18245    1
 ## 
-## Samples were drawn using NUTS(diag_e) at Wed Sep  7 11:16:46 2016.
+## Samples were drawn using NUTS(diag_e) at Sun Mar 19 15:49:47 2017.
 ## For each parameter, n_eff is a crude measure of effective sample size,
 ## and Rhat is the potential scale reduction factor on split chains (at 
 ## convergence, Rhat=1).
@@ -500,9 +498,9 @@ the discrete values of <code>tau</code></p>
 ## post-warmup draws per chain=9000, total post-warmup draws=36000.
 ## 
 ##      mean se_mean   sd 2.5% 25% 50% 75% 97.5% n_eff Rhat
-## tau 42.35    0.01 1.58   40  41  42  43    46 34832    1
+## tau 42.35    0.01 1.58   40  41  42  43    46 35669    1
 ## 
-## Samples were drawn using NUTS(diag_e) at Wed Sep  7 11:16:46 2016.
+## Samples were drawn using NUTS(diag_e) at Sun Mar 19 15:49:47 2017.
 ## For each parameter, n_eff is a crude measure of effective sample size,
 ## and Rhat is the potential scale reduction factor on split chains (at 
 ## convergence, Rhat=1).
@@ -523,11 +521,36 @@ the discrete values of <code>tau</code></p>
 
 
 <p><img alt="plot of chunk bayesian-changepoint-ci" src="figure/changepoint/bayesian-changepoint-ci-1.png" />
-The plot indicates the expected value of <span class="math">\(\tau = 42\)</span>. The red bands denote the 80% credible interval; if we were to repeat the expriment several time, we'd expect <span class="math">\(\tau\)</span> to lie in the interval <span class="math">\(41 \leq \tau \leq 44\)</span> with probability <span class="math">\(P=0.80\)</span>. The black bands denote the 95% credible interval.</p>
+The plot indicates the expected value of <span class="math">\(\tau = 42\)</span>. The red bands denote the 80% credible interval; if we were to repeat the experiment several time, we'd expect <span class="math">\(\tau\)</span> to lie in the interval <span class="math">\(41 \leq \tau \leq 44\)</span> with probability <span class="math">\(P=0.80\)</span>. The black bands denote the 95% credible interval.</p>
 <p>This result is consistent with the dataset <span class="math">\(D\)</span>.</p>
 <h2>Conclusion</h2>
 <p>In this document I showed a simple yet powerful bayesian model for detecting a single changepoint in a timeseries. The advantages over the frequentist approach are twofold. On the one hand, the Bayesian model gives a distribution of changepoints and not a single point estimate. This lets us reason about how credible the model output is. On the other hand, we don't need to hard-code threshold values for a test statistic, but rather embed our prior knowledge about the data to "tune" the model.</p>
-<p>It's not all roses, though. The flexibility given to us by the Bayesian framework comes at the expenses of some math being needed to work with a discrete parameter. This is largely due to <code>stan</code>s implementation choices wrt discrete random variables. For a more concise changepoint model, written with the PyMC framework one can have a look at the work of my colleague Vincent at <a href="http://koaning.io/switching-to-sampling-in-order-to-switch.html">Switching to Sampling in order to Switch</a>. A drawback of the Bayesian approach is that it is relatively computationally expensive. On my machine (a 2015 retina MacBook pro), it takes about 7 seconds to run the MCMC simulation on four cores<sup id="fnref:2"><a class="footnote-ref" href="#fn:2" rel="footnote">2</a></sup>. For comparison, the <code>changepoint</code> package has a sub-second run time.</p>
+<p>It's not all roses, though. The flexibility given to us by the Bayesian framework comes at the expenses of some math being needed to work with a discrete parameter. This is largely due to <code>stan</code>s implementation choices wrt discrete random variables. For a more concise changepoint model, written with the PyMC framework one can have a look at the work of my colleague Vincent at <a href="http://koaning.io/switching-to-sampling-in-order-to-switch.html">Switching to Sampling in order to Switch</a>. A drawback of the Bayesian approach is that it is relatively computationally expensive. On my machine (a 2015 retina MacBook pro), it takes about 7 seconds to run the MCMC simulation on four cores<sup id="fnref:2"><a class="footnote-ref" href="#fn:2" rel="footnote">2</a></sup>. For comparison, the <code>changepoint</code> package has a sub-second run time. One bottle neck of this model is the quadratic cost for marginalising out <code>tau</code> in the <code>transformed paramteres</code> block. We can make this operation linear by dynamic programming (see also the discussion wrt the coal mine example in the stan manual). </p>
+<p>Many thanks to <a href="https://github.com/idontgetoutmuch">@idontgetoutmuch</a> for suggesting the following implementation:</p>
+<div class="highlight"><pre>transformed parameters {
+  vector[N] log_p;
+  {
+    vector[N+1] log_p_e;
+    vector[N+1] log_p_l;
+    log_p_e[1] = 0;
+    log_p_l[1] = 0;
+    for (i in 1:N) {
+      log_p_e[i + 1] = log_p_e[i] + normal_lpdf(D[i] | mu1, sigma1);
+      log_p_l[i + 1] = log_p_l[i] + normal_lpdf(D[i] | mu2, sigma2);
+    }
+    log_p = rep_vector(-log(N) + log_p_l[N + 1], N) + head(log_p_e, N) - head(log_p_l, N);
+  }
+}
+</pre></div>
+
+
+<p>Which leads to a total runtime of apporximately 3.5 seconds:</p>
+<div class="highlight"><pre>Elapsed Time: 0.833563 seconds (Warm-up)
+              2.64182 seconds (Sampling)
+              3.47538 seconds (Total)
+</pre></div>
+
+
 <div class="footnote">
 <hr />
 <ol>
@@ -612,30 +635,28 @@ The plot indicates the expected value of <span class="math">\(\tau = 42\)</span>
   <p>  
     <a href="https://github.com/fjavieralba/flasky">Theme</a>  by <a href="http://fjavieralba.com">fjavieralba</a> (Modified)
   </p> 
-<!--
-  <p>
-    <div class=social style="font-size: 27px;">
-      <ul>
-        <script language="JavaScript">
-          u = '';
-          s = '';
-          document.write('<a href=\"mailto:' + u + '@' + s + '\" target=\"_blank\">');
-        </script>
-            <li><i class="icon-envelope icon-large"></i> </li>
-        </a>
-        <a href="http://twitter.com/" target="_blank"> <li> <i class="icon-twitter-sign icon-large"> </li></i> </a>
-        <a href="" target="_blank"><li><i class="icon-linkedin-sign icon-large" ></i></li></a>
-        <a href="" target="_blank"> <li> <i class="icon-github-sign icon-large"></i> </li> </a>
-        <a href="" target="_blank"><li> <i class="icon-facebook-sign icon-large"></i></li> </a>
-        <a href="" target="_blank"><li><i class="icon-google-plus-sign icon-large"></i> </li> </a>
-        <a href="" target="_blank"><li><i class="icon-pinterest-sign icon-large"></i></li></a>
-
-
-        <a href="../feeds/all.rss.xml" rel="alternate" title="Recent Blog Posts"><li> <i class="icon-rss icon-large"></i> </li></a>
-      </ul>
-    </div>
-  </p>
--->
 </div>    </div>
   </body>
+      <script>
+  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+   (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+   m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+    })(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+
+   ga('create', 'UA-56891536-1', 'auto');
+   ga('send', 'pageview');
+
+   /**
+    * Function that tracks a click on an outbound link in Google Analytics.
+    * This function takes a valid URL string as an argument, and uses that URL string
+    * as the event label.
+    */
+    var trackOutboundLink = function(url) {
+       ga('send', 'event', 'outbound', 'click', url, {'hitCallback':
+         function () {
+         document.location = url;
+         }
+       });
+    }
+</script>
 </html>
