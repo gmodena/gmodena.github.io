@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <link href='http://fonts.googleapis.com/css?family=Noticia+Text:400,700' rel='stylesheet' type='text/css' />
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title> Factorization Machines with Tensorflow | nowave.it </title>
+
+    <link rel="stylesheet" href="./theme/css/style.css" type="text/css" />
+    <link rel="stylesheet" href="./theme/css/pygments.css" type="text/css" />
+    <link rel="stylesheet" href="./theme/css/font-awesome.css" type="text/css"/>
+  </head>
+  <body>
+    <div class=container>
+<div class="header">
+    <a href="./">nowave.it</a> <span class="muted"></span>
+</div>
+
+<div class=navigation>
+    <ul>
+    </ul>
+</div>
+<div class=separator></div>        
+        <div class=body>
+    <h1 class="title"> Factorization Machines with Tensorflow</h1>
+    <p class=date> Fri 10 February 2017 </p>
+    <p>I wanted to learn more about <a href="http://www.csie.ntu.edu.tw/~b97053/paper/Rendle2010FM.pdf">Factorization Machines</a>  and get a bit familiar with <a href="https://www.tensorflow.org">Tensorflow</a>. This article gives an example of how to prototype the former in the latter.</p>
+<h2>Introduction</h2>
+<p>The idea of Factorization Machines (FMs from now on) is to learn a polynomial kernel by representing high-order terms as a low-dimensional inner product of latent factor vectors. </p>
+<p>§The method gained notoriety in the early 2010s, when it was the winning solution in a few data mining competitions (KDD, Kaggle). Nowadays it is considered a solid framework for modeling highly sparse data. Similar features will end up being close together in an inner product space embedding, making it possible to model infrequent interactions in the training data.
+This makes the model very much suitable for tasks like click prediction and recommendation. FMs also rather versatile, and can mimic other factorization models by feature engineering.</p>
+<h2>The problem</h2>
+<p>I won't be original here. How would you go about recommending movies to a user?
+The canonical approach is to suggest new movies (or any type of item), based on movies the user liked (rated) in the past. We might want to take into account information such as user's gender, occupation and nationality. But also things like when a movie was rated, from which device, country etc. The first step towards building such a system could be trying to estimate how a user would rate a candidate recommendation. That is, we would like to solve a regression problem. Usually we'd represent training data as <a href="https://en.wikipedia.org/wiki/Feature_vector">feature vectors</a>, with indicator variables (one-hot-encoding, hashing trick) to denote categorical data. This representation will typically result in a high dimensional, highly sparse, feature space.</p>
+<h2>Polynomial regression</h2>
+<p>To justify FMs, it is useful to make a step back and think at interactions between features in terms of linear and polynomial regression. </p>
+<p>In regression we want to model data represented by a design matrix <span class="math">\(X \in R^{n \times p}\)</span> of <span class="math">\(n\)</span> observations with <span class="math">\(p\)</span> features. We denote with  <span class="math">\(\textbf{x}_{i} \in R^p\)</span> the <span class="math">\(i\)</span>-th feature vector (the history of a user's preferences), <span class="math">\(y_{i} \in \mathbb{R}\)</span> is its corresponding target (the movie rating). Moving forward I'll abuse notation and drop the <span class="math">\(i\)</span> subscript from the feature vector and target.</p>
+<p>We can learn the linear contribution of each feature as:</p>
+<p><span class="math">\(\hat{y}(\textbf{x}) = w_{0} + \sum_{i=1}^{p} w_{i} x_{i}\)</span></p>
+<p>Where <span class="math">\(w_{0} \in \mathbb{R}\)</span>, <span class="math">\(\textbf{w} \in \mathbb{R}^p\)</span>  - the bias and weights for <span class="math">\(\textbf{x}\)</span> - are parameters we'll learn from data. </p>
+<p>The contribution of <em>job = data scientist</em> and <em>city = Amsterdam</em> is captured by learning the weights for <span class="math">\(w_{ds} x_{ds} + w_{amsterdam} x_{amsterdam}\)</span>.</p>
+<p>This model is efficient, and can be computed and stored with <span class="math">\(O(p)\)</span> complexity. The caveat is that the contribution of each feature is weighted individually. What if some <em>data scientists in Amsterdam</em> are more interested in certain movies than another demographic? To capture the interaction of <em>data scientist</em> and <em>Amsterdam</em> appearing together, we need to learn  <span class="math">\(w_{ds} x_{ds} + w_{amsterdam} x_{amsterdam} + w_{ds, amsterdam} x_{ds} x_{amsterdam}\)</span></p>
+<p>Fitting an order 2 polynomial will do the trick:
+<span class="math">\(\hat{y}(\textbf{x}) = w_{0} + \sum_{i=1}^{p} w_{i} x_{i} +  \sum_{i=1}^p \sum_{j=i+1}^p x_{i} x_{j} w_{ij}\)</span></p>
+<p>However this time we have to learn additional <span class="math">\(W \in \mathbb{R}^{p \times p}\)</span> parameters to model pairwise interactions.</p>
+<p>This model is more powerful, but comes with <span class="math">\(O(p^2)\)</span> complexity. If dealing with sparse data, we might not be able to learn <span class="math">\(W\)</span> reliably.  When doing machine learning at scale (millions of users, represented by hundred thousands of features, that rate thousands of items) we would typically be constrained to pick a less expressive model that guarantees faster runtime and lower memory footprint.</p>
+<h2>Factorization Machines</h2>
+<p>The "trick" of FMs is to model <span class="math">\(W\)</span> as a lower dimensional factor matrix <span class="math">\(V\)</span>, and do some algebra manipulation to fit the polynomial in linear time.</p>
+<h3>A bit more formally</h3>
+<p>This section follows from <a href="http://www.csie.ntu.edu.tw/~b97053/paper/Rendle2010FM.pdf">Rendle, 2010</a> and <a href="http://citeseerx.ist.psu.edu/viewdoc/download?doi=10.1.1.442.5724&amp;rep=rep1&amp;type=pdf">Rendle, 2012</a>.</p>
+<p>We can define an order two FM, describing two-ways interactions between features, as follows:</p>
+<p><span class="math">\(\hat{y}(\textbf{x}) = w_{0} + \sum_{i=1}^{p} w_{i} x_{i} + \sum_{i=1}^{p} \sum_{j=i+1}^p x_i x_{j} \sum_{f=1}^k v_{if} v_{jf}\)</span> (eq 1)</p>
+<p>Where, like before, <span class="math">\(w_{0} \in \mathbb{R}\)</span>,  <span class="math">\(\textbf{w} \in \mathbb{R}^{p}\)</span> are the weights, <span class="math">\(V \in \mathbb{R}^{p \times k}\)</span> is a rank <span class="math">\(k\)</span> factorisation of <span class="math">\(W\)</span>.</p>
+<p>The first part of (eq 1.) models linear interactions; the nested sum captures pairwise interactions. The effect of pairwise interactions <span class="math">\(w_{ij}\)</span> is modelled as the dot product <span class="math">\(w_{ij} \approx \langle \textbf{v}_{i}, \textbf{v}_{j} \rangle = \sum_{f=1}^k v_{if} v_{jf}\)</span>. </p>
+<p>A key insight in Rendle's paper is that we can rewrite the interactions  as:
+<span class="math">\(\sum_{i=1}^p \sum_{j=i+1}^p x_{i} x_{j} \sum_{f=1}^k v_{if} v_{jf} = \\ 
+\frac{1}{2} \sum_{i=1}^p \sum_{j=1}^p \sum_{f=1}^k x_{i} x_{j}  v_{if} v_{jf} - \frac{1}{2} \sum_{i=1}^p \sum_{f=1}^k x_{i} x_{j}  v_{if}v_{jf} = \\
+\frac{1}{2}(\sum_{i=1}^p \sum_{j=1}^p \sum_{f=1}^k x_{i} x_{j}  v_{if} v_{jf}  -  \sum_{i=1}^p \sum_{f=1}^k x_{i} x_{j}  v_{if} v_{jf} ) = \\
+\frac{1}{2} \sum_{f=1}^{k} ( (\sum_{i=1}^p v_{if}x_{i}) (\sum_{j=1}^p v_{jf}x_{j})  - \sum_{i=1}^{p} v_{if}^2 x_{i}^2) = \\
+\frac{1}{2} \sum_{f=1}^{k} ( (\sum_{i}^{p} v_{if}x_{i})^2  - \sum_{i=1}^{p} v_{if}^2 x_{i}^2)\)</span></p>
+<p>This leads to a reformulation of (eq 1) as
+<span class="math">\(\hat{y}(\textbf{x}) = w_{0} + \sum_{i=1}^p w_{i} x_{i} + \frac{1}{2} \sum_{f=1}^k ( (\sum_{i}^p v_{if} x_{i})^2  - \sum_{i=1}^p v_{if}^2 x_{i}^2)\)</span></p>
+<p>which has <span class="math">\(O(pk)\)</span> complexity.</p>
+<p>Rendle also notes that FMs can be generalized to higher degrees, but pretty much leaves it at that. Conceptually, the generalization is straightforward, but the algebra becomes a bit dauting. Interesting work in simplyfing this aspect can be found in <a href="https://arxiv.org/abs/1607.07195">Blondel et. al. 2016</a>.</p>
+<h3>Learning FMs</h3>
+<p>We can learn FMs by minimising common loss functions.</p>
+<ul>
+<li>
+<p>Binary classification: <span class="math">\(l(\hat{y}(\textbf{x}) , y) = - \ln \sigma(\hat{y}(\textbf{x}){y})\)</span>, where <span class="math">\(\sigma\)</span> is the sigmoid function</p>
+</li>
+<li>
+<p>Regression: <span class="math">\(l(\hat{y}(\textbf{x}) , y) = (\hat{y}(\textbf{x}) - y)^2\)</span></p>
+</li>
+</ul>
+<p>In both cases we should apply <span class="math">\(L^2\)</span> regularization to avoid overfitting. 
+Model parameters can be grouped, and each group can be assigned an independent regularization value <span class="math">\(\lambda\)</span>. The same holds for <span class="math">\(\textbf{w}\)</span> and <span class="math">\(w_0\)</span>, 
+and factorization layers <span class="math">\(f \in \{1,...,k\}\)</span>. In practice, using many independent regularization values will introduce substantial computational overhead.</p>
+<p>In <a href="http://citeseerx.ist.psu.edu/viewdoc/download?doi=10.1.1.442.5724&amp;rep=rep1&amp;type=pdf">Rendle 2012</a> and related work, it is shown that FMs can be learnt by ALS or, 
+if we interpret them within a probabilistic framework, by MCMC sampling. For the purpose of this article I'll do gradient descent using <a href="http://sebastianruder.com/optimizing-gradient-descent/index.html#adagrad">adagrad</a> as the optimisation strategy of choice.</p>
+<h2>Tensorflow</h2>
+<p><a href="https://www.tensorflow.org">Tensorflow</a> is an open source numerical computation framework released by Google in 2015. It has gained popularity
+in the Deep Learning community, where it is used to model large neural networks. By simplifying things a lot, we can think of neural networks as a series of matrix multiplication operations.</p>
+<p>Tensorflow let's a programmer <em>declare</em> these operations, build a dependency graph of relationships, and execute it on a C++ backend.
+Nodes of the graph are called <code>operations</code>. Each <code>operation</code> takes one or more multi-dimensional arrays (<code>Tensor</code>s) and performs some computation that generate zero or more <code>Tensor</code>s.
+Conceptually the framework is simple, yet comes with a rich library of built-in and contributed modules.
+In particular, it contains a wide range of optimizers (SGD, adagrad, adam, ...).</p>
+<p>We have all the components to implement an order 2 FM, and run it on a (nvidia) GPU without having to worry about low level CUDA details. For brownie points, we can even do it in Python. Scaling to clusters of CPUs or GPUs is also relatively easy.</p>
+<h2>FMs with Tensorflow</h2>
+<p>In this section I'll show how to implement FMs with Tensorflow, and learn movie ratings
+from the dummy data shown in <a href="http://www.csie.ntu.edu.tw/~b97053/paper/Rendle2010FM.pdf">Rendle 2010</a></p>
+<div class="highlight"><pre><span class="kn">import</span> <span class="nn">numpy</span> <span class="kn">as</span> <span class="nn">np</span>
+<span class="c"># Example dummy data from Rendle 2010 </span>
+<span class="c"># http://www.csie.ntu.edu.tw/~b97053/paper/Rendle2010FM.pdf</span>
+<span class="c"># Stolen from https://github.com/coreylynch/pyFM</span>
+<span class="c"># Categorical variables (Users, Movies, Last Rated) have been one-hot-encoded </span>
+<span class="n">x_data</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">matrix</span><span class="p">([</span>
+<span class="c">#    Users  |     Movies     |    Movie Ratings   | Time | Last Movies Rated</span>
+<span class="c">#   A  B  C | TI  NH  SW  ST | TI   NH   SW   ST  |      | TI  NH  SW  ST</span>
+    <span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span>  <span class="mi">1</span><span class="p">,</span>  <span class="mi">0</span><span class="p">,</span>  <span class="mi">0</span><span class="p">,</span>  <span class="mi">0</span><span class="p">,</span>   <span class="mf">0.3</span><span class="p">,</span> <span class="mf">0.3</span><span class="p">,</span> <span class="mf">0.3</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span>     <span class="mi">13</span><span class="p">,</span>   <span class="mi">0</span><span class="p">,</span>  <span class="mi">0</span><span class="p">,</span>  <span class="mi">0</span><span class="p">,</span>  <span class="mi">0</span> <span class="p">],</span>
+    <span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span>  <span class="mi">0</span><span class="p">,</span>  <span class="mi">1</span><span class="p">,</span>  <span class="mi">0</span><span class="p">,</span>  <span class="mi">0</span><span class="p">,</span>   <span class="mf">0.3</span><span class="p">,</span> <span class="mf">0.3</span><span class="p">,</span> <span class="mf">0.3</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span>     <span class="mi">14</span><span class="p">,</span>   <span class="mi">1</span><span class="p">,</span>  <span class="mi">0</span><span class="p">,</span>  <span class="mi">0</span><span class="p">,</span>  <span class="mi">0</span> <span class="p">],</span>
+    <span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span>  <span class="mi">0</span><span class="p">,</span>  <span class="mi">0</span><span class="p">,</span>  <span class="mi">1</span><span class="p">,</span>  <span class="mi">0</span><span class="p">,</span>   <span class="mf">0.3</span><span class="p">,</span> <span class="mf">0.3</span><span class="p">,</span> <span class="mf">0.3</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span>     <span class="mi">16</span><span class="p">,</span>   <span class="mi">0</span><span class="p">,</span>  <span class="mi">1</span><span class="p">,</span>  <span class="mi">0</span><span class="p">,</span>  <span class="mi">0</span> <span class="p">],</span>
+    <span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span>  <span class="mi">0</span><span class="p">,</span>  <span class="mi">0</span><span class="p">,</span>  <span class="mi">1</span><span class="p">,</span>  <span class="mi">0</span><span class="p">,</span>   <span class="mi">0</span><span class="p">,</span>   <span class="mi">0</span><span class="p">,</span>   <span class="mf">0.5</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">,</span>   <span class="mi">5</span><span class="p">,</span>    <span class="mi">0</span><span class="p">,</span>  <span class="mi">0</span><span class="p">,</span>  <span class="mi">0</span><span class="p">,</span>  <span class="mi">0</span> <span class="p">],</span>
+    <span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span>  <span class="mi">0</span><span class="p">,</span>  <span class="mi">0</span><span class="p">,</span>  <span class="mi">0</span><span class="p">,</span>  <span class="mi">1</span><span class="p">,</span>   <span class="mi">0</span><span class="p">,</span>   <span class="mi">0</span><span class="p">,</span>   <span class="mf">0.5</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">,</span>   <span class="mi">8</span><span class="p">,</span>    <span class="mi">0</span><span class="p">,</span>  <span class="mi">0</span><span class="p">,</span>  <span class="mi">1</span><span class="p">,</span>  <span class="mi">0</span> <span class="p">],</span>
+    <span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span>  <span class="mi">1</span><span class="p">,</span>  <span class="mi">0</span><span class="p">,</span>  <span class="mi">0</span><span class="p">,</span>  <span class="mi">0</span><span class="p">,</span>   <span class="mf">0.5</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span>   <span class="mf">0.5</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span>     <span class="mi">9</span><span class="p">,</span>    <span class="mi">0</span><span class="p">,</span>  <span class="mi">0</span><span class="p">,</span>  <span class="mi">0</span><span class="p">,</span>  <span class="mi">0</span> <span class="p">],</span>
+    <span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span>  <span class="mi">0</span><span class="p">,</span>  <span class="mi">0</span><span class="p">,</span>  <span class="mi">1</span><span class="p">,</span>  <span class="mi">0</span><span class="p">,</span>   <span class="mf">0.5</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span>   <span class="mf">0.5</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span>     <span class="mi">12</span><span class="p">,</span>   <span class="mi">1</span><span class="p">,</span>  <span class="mi">0</span><span class="p">,</span>  <span class="mi">0</span><span class="p">,</span>  <span class="mi">0</span> <span class="p">]</span>
+<span class="p">])</span>
+<span class="c"># ratings</span>
+<span class="n">y_data</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="mi">5</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">4</span><span class="p">,</span> <span class="mi">5</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">5</span><span class="p">])</span>
+
+<span class="c"># Let&#39;s add an axis to make tensoflow happy.</span>
+<span class="n">y_data</span><span class="o">.</span><span class="n">shape</span> <span class="o">+=</span> <span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="p">)</span>
+</pre></div>
+
+
+<p>First we'll declare a model in Python, then we'll execute it within a <code>Session</code> context on the C++ backend. The code that follows is not the most pythonic,
+but for the purpose of this notes I'd rather be explicit about the Tensorflow API.</p>
+<div class="highlight"><pre><span class="kn">import</span> <span class="nn">tensorflow</span> <span class="kn">as</span> <span class="nn">tf</span>
+<span class="n">n</span><span class="p">,</span> <span class="n">p</span> <span class="o">=</span> <span class="n">x_data</span><span class="o">.</span><span class="n">shape</span>
+
+<span class="c"># number of latent factors</span>
+<span class="n">k</span> <span class="o">=</span> <span class="mi">5</span>
+
+<span class="c"># design matrix</span>
+<span class="n">X</span> <span class="o">=</span> <span class="n">tf</span><span class="o">.</span><span class="n">placeholder</span><span class="p">(</span><span class="s">&#39;float&#39;</span><span class="p">,</span> <span class="n">shape</span><span class="o">=</span><span class="p">[</span><span class="n">n</span><span class="p">,</span> <span class="n">p</span><span class="p">])</span>
+<span class="c"># target vector</span>
+<span class="n">y</span> <span class="o">=</span> <span class="n">tf</span><span class="o">.</span><span class="n">placeholder</span><span class="p">(</span><span class="s">&#39;float&#39;</span><span class="p">,</span> <span class="n">shape</span><span class="o">=</span><span class="p">[</span><span class="n">n</span><span class="p">,</span> <span class="mi">1</span><span class="p">])</span>
+
+<span class="c"># bias and weights</span>
+<span class="n">w0</span> <span class="o">=</span> <span class="n">tf</span><span class="o">.</span><span class="n">Variable</span><span class="p">(</span><span class="n">tf</span><span class="o">.</span><span class="n">zeros</span><span class="p">([</span><span class="mi">1</span><span class="p">]))</span>
+<span class="n">W</span> <span class="o">=</span> <span class="n">tf</span><span class="o">.</span><span class="n">Variable</span><span class="p">(</span><span class="n">tf</span><span class="o">.</span><span class="n">zeros</span><span class="p">([</span><span class="n">p</span><span class="p">]))</span>
+
+<span class="c"># interaction factors, randomly initialized </span>
+<span class="n">V</span> <span class="o">=</span> <span class="n">tf</span><span class="o">.</span><span class="n">Variable</span><span class="p">(</span><span class="n">tf</span><span class="o">.</span><span class="n">random_normal</span><span class="p">([</span><span class="n">k</span><span class="p">,</span> <span class="n">p</span><span class="p">],</span> <span class="n">stddev</span><span class="o">=</span><span class="mf">0.01</span><span class="p">))</span>
+
+<span class="c"># estimate of y, initialized to 0.</span>
+<span class="n">y_hat</span> <span class="o">=</span> <span class="n">tf</span><span class="o">.</span><span class="n">Variable</span><span class="p">(</span><span class="n">tf</span><span class="o">.</span><span class="n">zeros</span><span class="p">([</span><span class="n">n</span><span class="p">,</span> <span class="mi">1</span><span class="p">]))</span>
+</pre></div>
+
+
+<p>We use <code>Placeholder</code>s for the inputs and targets. The actual data will be assigned at run time in the <code>Session</code>. <code>X</code> and <code>y</code>
+won't be further modified by the backend; we use <code>Variable</code>s to hold bias, weights and factor layers. These are the parameters
+that will be updated when fitting the model.</p>
+<p>In the following code we compute <span class="math">\(WX\)</span> and use <code>reduce_sum()</code> to add together the row elements of the resulting <code>Tensor</code> (axis 1). <code>keep_dims</code> is set to <code>True</code> to ensure that input/output dimensions are respected.</p>
+<div class="highlight"><pre><span class="n">linear_terms</span> <span class="o">=</span> <span class="n">tf</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">w0</span><span class="p">,</span>
+        	<span class="n">tf</span><span class="o">.</span><span class="n">reduce_sum</span><span class="p">(</span>
+                <span class="n">tf</span><span class="o">.</span><span class="n">multiply</span><span class="p">(</span><span class="n">W</span><span class="p">,</span> <span class="n">X</span><span class="p">),</span> <span class="mi">1</span><span class="p">,</span> <span class="n">keep_dims</span><span class="o">=</span><span class="bp">True</span><span class="p">))</span>
+</pre></div>
+
+
+<p>In the snippet above we just implemented linear regression.</p>
+<p>We do the same for the interaction terms.</p>
+<div class="highlight"><pre><span class="n">interactions</span> <span class="o">=</span> <span class="p">(</span><span class="n">tf</span><span class="o">.</span><span class="n">multiply</span><span class="p">(</span><span class="mf">0.5</span><span class="p">,</span>
+                <span class="n">tf</span><span class="o">.</span><span class="n">reduce_sum</span><span class="p">(</span>
+                    <span class="n">tf</span><span class="o">.</span><span class="n">sub</span><span class="p">(</span>
+                        <span class="n">tf</span><span class="o">.</span><span class="n">pow</span><span class="p">(</span> <span class="n">tf</span><span class="o">.</span><span class="n">matmul</span><span class="p">(</span><span class="n">X</span><span class="p">,</span> <span class="n">tf</span><span class="o">.</span><span class="n">transpose</span><span class="p">(</span><span class="n">V</span><span class="p">)),</span> <span class="mi">2</span><span class="p">),</span>
+                        <span class="n">tf</span><span class="o">.</span><span class="n">matmul</span><span class="p">(</span><span class="n">tf</span><span class="o">.</span><span class="n">pow</span><span class="p">(</span><span class="n">X</span><span class="p">,</span> <span class="mi">2</span><span class="p">),</span> <span class="n">tf</span><span class="o">.</span><span class="n">transpose</span><span class="p">(</span><span class="n">tf</span><span class="o">.</span><span class="n">pow</span><span class="p">(</span><span class="n">V</span><span class="p">,</span> <span class="mi">2</span><span class="p">)))),</span>
+                    <span class="mi">1</span><span class="p">,</span> <span class="n">keep_dims</span><span class="o">=</span><span class="bp">True</span><span class="p">)))</span>
+</pre></div>
+
+
+<p>And add everything together to obtain the target estimate.</p>
+<div class="highlight"><pre><span class="n">y_hat</span> <span class="o">=</span> <span class="n">tf</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">linear_terms</span><span class="p">,</span> <span class="n">interactions</span><span class="p">)</span>
+</pre></div>
+
+
+<p>Since we are solving a regression problem, we'll learn the model parameters by
+minimizing the sum of squares loss function. We also add a regularization 
+term to prevent overfitting.</p>
+<div class="highlight"><pre><span class="c"># L2 regularized sum of squares loss function over W and V</span>
+<span class="n">lambda_w</span> <span class="o">=</span> <span class="n">tf</span><span class="o">.</span><span class="n">constant</span><span class="p">(</span><span class="mf">0.001</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s">&#39;lambda_w&#39;</span><span class="p">)</span>
+<span class="n">lambda_v</span> <span class="o">=</span> <span class="n">tf</span><span class="o">.</span><span class="n">constant</span><span class="p">(</span><span class="mf">0.001</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s">&#39;lambda_v&#39;</span><span class="p">)</span>
+
+<span class="n">l2_norm</span> <span class="o">=</span> <span class="p">(</span><span class="n">tf</span><span class="o">.</span><span class="n">reduce_sum</span><span class="p">(</span>
+            <span class="n">tf</span><span class="o">.</span><span class="n">add</span><span class="p">(</span>
+                <span class="n">tf</span><span class="o">.</span><span class="n">multiply</span><span class="p">(</span><span class="n">lambda_w</span><span class="p">,</span> <span class="n">tf</span><span class="o">.</span><span class="n">pow</span><span class="p">(</span><span class="n">W</span><span class="p">,</span> <span class="mi">2</span><span class="p">)),</span>
+                <span class="n">tf</span><span class="o">.</span><span class="n">multiply</span><span class="p">(</span><span class="n">lambda_v</span><span class="p">,</span> <span class="n">tf</span><span class="o">.</span><span class="n">pow</span><span class="p">(</span><span class="n">V</span><span class="p">,</span> <span class="mi">2</span><span class="p">)))))</span>
+
+<span class="n">error</span> <span class="o">=</span> <span class="n">tf</span><span class="o">.</span><span class="n">reduce_mean</span><span class="p">(</span><span class="n">tf</span><span class="o">.</span><span class="n">square</span><span class="p">(</span><span class="n">tf</span><span class="o">.</span><span class="n">sub</span><span class="p">(</span><span class="n">y</span><span class="p">,</span> <span class="n">y_hat</span><span class="p">)))</span>
+<span class="n">loss</span> <span class="o">=</span> <span class="n">tf</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">error</span><span class="p">,</span> <span class="n">l2_norm</span><span class="p">)</span>
+</pre></div>
+
+
+<p>To train the model we instantiate an <code>Optimizer</code> object and <code>minimize</code> the loss function.</p>
+<div class="highlight"><pre><span class="n">eta</span> <span class="o">=</span> <span class="n">tf</span><span class="o">.</span><span class="n">constant</span><span class="p">(</span><span class="mf">0.1</span><span class="p"><span class="p">)</span>
+<span class="n">optimizer</span> <span class="o">=</span> <span class="n">tf</span><span class="o">.</span><span class="n">train</span><span class="o">.</span><span class="n">AdagradOptimizer</span><span class="p">(</span><span class="n">eta</span>)</span><span class="o">.</span><span class="n">minimize</span><span class="p">(</span><span class="n">loss</span><span class="p">)</span>
+</pre></div>
+
+
+<p>We are ready to compile the graph, and launch it on the Tensorflow backend. We use a python <code>context manager</code>
+construct to handle the <code>Session</code>.</p>
+<div class="highlight"><pre><span class="c"># that&#39;s a lot of iterations</span>
+<span class="n">N_EPOCHS</span> <span class="o">=</span> <span class="mi">1000</span>
+<span class="c"># Launch the graph.</span>
+<span class="n">init</span> <span class="o">=</span> <span class="n">tf</span><span class="o">.</span><span class="n">global_variables_initializer</span><span class="p">()</span>
+<span class="k">with</span> <span class="n">tf</span><span class="o">.</span><span class="n">Session</span><span class="p">()</span> <span class="k">as</span> <span class="n">sess</span><span class="p">:</span>
+    <span class="n">sess</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">init</span><span class="p">)</span>
+
+    <span class="k">for</span> <span class="n">epoch</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">N_EPOCHS</span><span class="p">):</span>
+        <span class="n">indices</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">n</span><span class="p">)</span>
+        <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">shuffle</span><span class="p">(</span><span class="n">indices</span><span class="p">)</span>
+        <span class="n">x_data</span><span class="p">,</span> <span class="n">y_data</span> <span class="o">=</span> <span class="n">x_data</span><span class="p">[</span><span class="n">indices</span><span class="p">],</span> <span class="n">y_data</span><span class="p">[</span><span class="n">indices</span><span class="p">]</span>
+        <span class="n">sess</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">optimizer</span><span class="p">,</span> <span class="n">feed_dict</span><span class="o">=</span><span class="p">{</span><span class="n">X</span><span class="p">:</span> <span class="n">x_data</span><span class="p">,</span> <span class="n">y</span><span class="p">:</span> <span class="n">y_data</span><span class="p">})</span>
+
+    <span class="k">print</span><span class="p">(</span><span class="s">&#39;MSE: &#39;</span><span class="p">,</span> <span class="n">sess</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">error</span><span class="p">,</span> <span class="n">feed_dict</span><span class="o">=</span><span class="p">{</span><span class="n">X</span><span class="p">:</span> <span class="n">x_data</span><span class="p">,</span> <span class="n">y</span><span class="p">:</span> <span class="n">y_data</span><span class="p">}))</span>
+    <span class="k">print</span><span class="p">(</span><span class="s">&#39;Loss (regularized error):&#39;</span><span class="p">,</span> <span class="n">sess</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">cost</span><span class="p">,</span> <span class="n">feed_dict</span><span class="o">=</span><span class="p">{</span><span class="n">X</span><span class="p">:</span> <span class="n">x_data</span><span class="p">,</span> <span class="n">y</span><span class="p">:</span> <span class="n">y_data</span><span class="p">}))</span>
+    <span class="k">print</span><span class="p">(</span><span class="s">&#39;Predictions:&#39;</span><span class="p">,</span> <span class="n">sess</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">y_hat</span><span class="p">,</span> <span class="n">feed_dict</span><span class="o">=</span><span class="p">{</span><span class="n">X</span><span class="p">:</span> <span class="n">x_data</span><span class="p">,</span> <span class="n">y</span><span class="p">:</span> <span class="n">y_data</span><span class="p">}))</span>
+    <span class="k">print</span><span class="p">(</span><span class="s">&#39;Learnt weights:&#39;</span><span class="p">,</span> <span class="n">sess</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">W</span><span class="p">,</span> <span class="n">feed_dict</span><span class="o">=</span><span class="p">{</span><span class="n">X</span><span class="p">:</span> <span class="n">x_data</span><span class="p">,</span> <span class="n">y</span><span class="p">:</span> <span class="n">y_data</span><span class="p">}))</span>
+    <span class="k">print</span><span class="p">(</span><span class="s">&#39;Learnt factors:&#39;</span><span class="p">,</span> <span class="n">sess</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">V</span><span class="p">,</span> <span class="n">feed_dict</span><span class="o">=</span><span class="p">{</span><span class="n">X</span><span class="p">:</span> <span class="n">x_data</span><span class="p">,</span> <span class="n">y</span><span class="p">:</span> <span class="n">y_data</span><span class="p">}))</span>
+</pre></div>
+
+
+<p>At each iteration (up to <code>N_EPOCHS</code>) we execute <code>optimizer</code>, which updates the model parameters by gradient descent.
+Note how we are moving data from the Python memory space to the C++ Tensorflow backend via <code>feed_dict={}</code>. Since we are dealing with toy data, 
+we can pass the dataset all at once. In practice, we will want to work with mini batches (eg. use a generator over the input). 
+We shuffle data (<code>np.random.shuffle</code>), to avoid biasing the gradient.</p>
+<p>On my system, the <code>print()</code> statements generate the following output:</p>
+<div class="highlight"><pre><span class="n">MSE</span><span class="o">:</span>  <span class="mf">0.602002</span>
+<span class="n">Loss</span> <span class="o">(</span><span class="n">regularized</span> <span class="n">error</span><span class="o">):</span> <span class="mf">0.648635</span>
+<span class="n">Predictions</span><span class="o">:</span> <span class="o">[[</span> <span class="mf">5.47903728</span><span class="o">]</span>
+ <span class="o">[</span> <span class="mf">1.89887238</span><span class="o">]</span>
+ <span class="o">[</span> <span class="mf">4.07966614</span><span class="o">]</span>
+ <span class="o">[</span> <span class="mf">5.53690434</span><span class="o">]</span>
+ <span class="o">[</span> <span class="mf">2.12006783</span><span class="o">]</span>
+ <span class="o">[</span> <span class="mf">4.45852327</span><span class="o">]</span>
+ <span class="o">[</span> <span class="mf">5.5077672</span> <span class="o">]]</span>
+<span class="n">Learnt</span> <span class="n">weights</span><span class="o">:</span> <span class="o">[</span> <span class="mf">0.14918193</span>  <span class="mf">0.21650925</span> <span class="o">-</span><span class="mf">0.09897757</span>  <span class="mf">0.0068595</span>  <span class="o">-</span><span class="mf">0.0403119</span>   <span class="mf">0.19931278</span>
+  <span class="mf">0.09454302</span>  <span class="mf">0.00364213</span>  <span class="mf">0.11416676</span>  <span class="mf">0.09191741</span>  <span class="mf">0.18406411</span>  <span class="mf">0.10668989</span>
+  <span class="mf">0.13829312</span> <span class="o">-</span><span class="mf">0.15434285</span>  <span class="mf">0.09454302</span>  <span class="mi">0</span><span class="o">.</span>        <span class="o">]</span>
+<span class="n">Learnt</span> <span class="n">factors</span><span class="o">:</span> <span class="o">[[</span> <span class="mf">0.00705004</span>  <span class="mf">0.08103083</span> <span class="o">-</span><span class="mf">0.01872271</span>  <span class="mf">0.00544881</span> <span class="o">-</span><span class="mf">0.1015657</span>   <span class="mf">0.03488743</span>
+  <span class="o">-</span><span class="mf">0.00434609</span> <span class="o">-</span><span class="mf">0.02191383</span> <span class="o">-</span><span class="mf">0.02647865</span>  <span class="mf">0.03837667</span>  <span class="mf">0.06087479</span>  <span class="mf">0.04402512</span>
+   <span class="mf">0.04876902</span> <span class="o">-</span><span class="mf">0.15307751</span>  <span class="mf">0.00196489</span>  <span class="mf">0.00550045</span><span class="o">]</span>
+ <span class="o">[</span> <span class="mf">0.0546066</span>   <span class="mf">0.2176538</span>  <span class="o">-</span><span class="mf">0.01303235</span>  <span class="mf">0.09689698</span> <span class="o">-</span><span class="mf">0.15466486</span>  <span class="mf">0.12894225</span>
+   <span class="mf">0.03864328</span>  <span class="mf">0.03093899</span>  <span class="mf">0.01689298</span>  <span class="mf">0.08874346</span>  <span class="mf">0.18454561</span>  <span class="mf">0.15536882</span>
+   <span class="mf">0.15537314</span> <span class="o">-</span><span class="mf">0.26848108</span>  <span class="mf">0.03202138</span> <span class="o">-</span><span class="mf">0.00277198</span><span class="o">]</span>
+ <span class="o">[-</span><span class="mf">0.06930697</span> <span class="o">-</span><span class="mf">0.18463977</span>  <span class="mf">0.15689404</span> <span class="o">-</span><span class="mf">0.12465551</span>  <span class="mf">0.13754503</span> <span class="o">-</span><span class="mf">0.18341276</span>
+  <span class="o">-</span><span class="mf">0.0379773</span>  <span class="o">-</span><span class="mf">0.01738735</span> <span class="o">-</span><span class="mf">0.14120492</span> <span class="o">-</span><span class="mf">0.09994929</span> <span class="o">-</span><span class="mf">0.17874891</span> <span class="o">-</span><span class="mf">0.16736925</span>
+  <span class="o">-</span><span class="mf">0.20745522</span>  <span class="mf">0.22959492</span> <span class="o">-</span><span class="mf">0.05229255</span>  <span class="mf">0.00680638</span><span class="o">]</span>
+ <span class="o">[-</span><span class="mf">0.01874499</span> <span class="o">-</span><span class="mf">0.18115361</span>  <span class="mf">0.03584651</span> <span class="o">-</span><span class="mf">0.04214986</span>  <span class="mf">0.1509551</span>  <span class="o">-</span><span class="mf">0.09553284</span>
+  <span class="o">-</span><span class="mf">0.03395364</span> <span class="o">-</span><span class="mf">0.00030072</span>  <span class="mf">0.00359597</span> <span class="o">-</span><span class="mf">0.07835191</span> <span class="o">-</span><span class="mf">0.16964239</span> <span class="o">-</span><span class="mf">0.123653</span>
+  <span class="o">-</span><span class="mf">0.11962538</span>  <span class="mf">0.25852579</span> <span class="o">-</span><span class="mf">0.03928068</span> <span class="o">-</span><span class="mf">0.01048287</span><span class="o">]</span>
+ <span class="o">[-</span><span class="mf">0.01707606</span> <span class="o">-</span><span class="mf">0.16321027</span>  <span class="mf">0.05072568</span> <span class="o">-</span><span class="mf">0.0653125</span>   <span class="mf">0.14090565</span> <span class="o">-</span><span class="mf">0.06063132</span>
+  <span class="o">-</span><span class="mf">0.01582224</span>  <span class="mf">0.02301382</span> <span class="o">-</span><span class="mf">0.01347715</span> <span class="o">-</span><span class="mf">0.07161148</span> <span class="o">-</span><span class="mf">0.15456919</span> <span class="o">-</span><span class="mf">0.11386904</span>
+  <span class="o">-</span><span class="mf">0.09024142</span>  <span class="mf">0.24246764</span> <span class="o">-</span><span class="mf">0.02350813</span> <span class="o">-</span><span class="mf">0.00971563</span><span class="o">]</span>
+ <span class="o">[</span> <span class="mf">0.12528357</span>  <span class="mf">0.06116699</span> <span class="o">-</span><span class="mf">0.03955081</span>  <span class="mf">0.08235611</span> <span class="o">-</span><span class="mf">0.01942447</span>  <span class="mf">0.09131676</span>
+  <span class="o">-</span><span class="mf">0.05486022</span>  <span class="mf">0.0194256</span>   <span class="mf">0.12990384</span>  <span class="mf">0.0041019</span>   <span class="mf">0.05420737</span>  <span class="mf">0.06546079</span>
+   <span class="mf">0.0393628</span>   <span class="mf">0.03204706</span> <span class="o">-</span><span class="mf">0.05093096</span>  <span class="mf">0.00359864</span><span class="o">]</span>
+ <span class="o">[-</span><span class="mf">0.18544145</span> <span class="o">-</span><span class="mf">0.23963821</span>  <span class="mf">0.17378353</span> <span class="o">-</span><span class="mf">0.22184615</span>  <span class="mf">0.15998147</span> <span class="o">-</span><span class="mf">0.23689482</span>
+  <span class="o">-</span><span class="mf">0.01744101</span> <span class="o">-</span><span class="mf">0.04991474</span> <span class="o">-</span><span class="mf">0.1909833</span>  <span class="o">-</span><span class="mf">0.12747602</span> <span class="o">-</span><span class="mf">0.21516703</span> <span class="o">-</span><span class="mf">0.19689311</span>
+  <span class="o">-</span><span class="mf">0.27546856</span>  <span class="mf">0.25545105</span> <span class="o">-</span><span class="mf">0.01022351</span>  <span class="mf">0.00644435</span><span class="o">]</span>
+ <span class="o">[</span> <span class="mf">0.04372156</span>  <span class="mf">0.19893605</span> <span class="o">-</span><span class="mf">0.05931458</span>  <span class="mf">0.09953506</span> <span class="o">-</span><span class="mf">0.16382113</span>  <span class="mf">0.08543728</span>
+   <span class="mf">0.03261247</span>  <span class="mf">0.00653346</span>  <span class="mf">0.02534093</span>  <span class="mf">0.07904716</span>  <span class="mf">0.17823988</span>  <span class="mf">0.15749456</span>
+   <span class="mf">0.12673798</span> <span class="o">-</span><span class="mf">0.28109354</span>  <span class="mf">0.04243347</span> <span class="o">-</span><span class="mf">0.00722708</span><span class="o">]</span>
+ <span class="o">[-</span><span class="mf">0.04402747</span> <span class="o">-</span><span class="mf">0.21142682</span>  <span class="mf">0.01911086</span> <span class="o">-</span><span class="mf">0.09846341</span>  <span class="mf">0.17138375</span> <span class="o">-</span><span class="mf">0.11394891</span>
+  <span class="o">-</span><span class="mf">0.04136728</span> <span class="o">-</span><span class="mf">0.0086472</span>  <span class="o">-</span><span class="mf">0.04622135</span> <span class="o">-</span><span class="mf">0.10258008</span> <span class="o">-</span><span class="mf">0.19500685</span> <span class="o">-</span><span class="mf">0.16432707</span>
+  <span class="o">-</span><span class="mf">0.14555235</span>  <span class="mf">0.28950861</span> <span class="o">-</span><span class="mf">0.04734635</span>  <span class="mf">0.00215936</span><span class="o">]</span>
+ <span class="o">[-</span><span class="mf">0.09106413</span> <span class="o">-</span><span class="mf">0.01975513</span>  <span class="mf">0.04174449</span> <span class="o">-</span><span class="mf">0.06765321</span> <span class="o">-</span><span class="mf">0.04338175</span> <span class="o">-</span><span class="mf">0.02066345</span>
+  <span class="o">-</span><span class="mf">0.01545047</span> <span class="o">-</span><span class="mf">0.05105948</span> <span class="o">-</span><span class="mf">0.08453009</span> <span class="o">-</span><span class="mf">0.0035413</span>  <span class="o">-</span><span class="mf">0.03348914</span> <span class="o">-</span><span class="mf">0.00801001</span>
+   <span class="mf">0.0212482</span>  <span class="o">-</span><span class="mf">0.05964642</span> <span class="o">-</span><span class="mf">0.00983996</span> <span class="o">-</span><span class="mf">0.01162685</span><span class="o">]]</span>
+</pre></div>
+
+
+<h3>Experiments</h3>
+<p>To get a feeling of the overall perfomance and correctness of the model, I trained and tested FMs on the <a href="https://grouplens.org/datasets/movielens/100k/">movielens 100k dataset</a>.
+The goal is to predict the rating of each movie;  I trained on <code>ua.base</code> portion of the dataset, and used <code>ua.test</code> to test. After one-hot-encoding categorical variables, I obtained a <span class="math">\(90570
+ \times 2623\)</span> design matrix for the training set, and <span class="math">\(9430 \times 2623\)</span> for the test set.</p>
+<p>I trained a model using the <a href="http://sebastianruder.com/optimizing-gradient-descent/index.html#adam">adam</a> optimizer, with <code>learning_rate</code> initalized to <span class="math">\(0.01\)</span>. I built a model with <span class="math">\(20\)</span> factors, with adam running for <span class="math">\(100\)</span> iterations. With this setting I obtained the following:</p>
+<ul>
+<li>
+<p>MSE train:  <span class="math">\(0.779672\)</span></p>
+</li>
+<li>
+<p>MSE test:  <span class="math">\(0.907205352128\)</span></p>
+</li>
+</ul>
+<p>The numbers look pretty much in line with known performance in this benchmark. FM uses gradient descent on a non-convex objective, but in practice when using adam on movielens I did not notice much sensitivity to local minima. I trained the model on an AWS <code>p2.xlarge</code> instance both on CPU and GPU (Nvidia Tesla K80). My best of ten run times, training for 10 iterations, are 120s and 20s respectively. CPU performance might be impacted by the poor parallelism on this instance, but all in all the speed up of running FM on a GPU is not bad at all.</p>
+<h2>Conclusion</h2>
+<p>In this article I gave a brief summary of Factorization Machines. I showed how to implement the model in a few lines of python in Tensorflow. I tested the model accuracy on movielens 100k, and reported results in line with known benchmarks. It would be nice to do a more thorough evaluation of the model, on larger datasets, and compare the performance with the reference <code>libfm</code> implementation.</p>
+<script type="text/javascript">if (!document.getElementById('mathjaxscript_pelican_#%@#$@#')) {
+    var align = "center",
+        indent = "0em",
+        linebreak = "false";
+
+    if (false) {
+        align = (screen.width < 768) ? "left" : align;
+        indent = (screen.width < 768) ? "0em" : indent;
+        linebreak = (screen.width < 768) ? 'true' : linebreak;
+    }
+    
+    var mathjaxscript = document.createElement('script');
+    var location_protocol = (false) ? 'https' : document.location.protocol;
+    if (location_protocol !== 'http' && location_protocol !== 'https') location_protocol = 'https:';
+    mathjaxscript.id = 'mathjaxscript_pelican_#%@#$@#';
+    mathjaxscript.type = 'text/javascript'; 
+    mathjaxscript.src = location_protocol + '//cdn.mathjax.org/mathjax/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML';
+    mathjaxscript[(window.opera ? "innerHTML" : "text")] =
+        "MathJax.Hub.Config({" +
+        "    config: ['MMLorHTML.js']," +
+        "    TeX: { extensions: ['AMSmath.js','AMSsymbols.js','noErrors.js','noUndefined.js'], equationNumbers: { autoNumber: 'AMS' } }," +
+        "    jax: ['input/TeX','input/MathML','output/HTML-CSS']," +
+        "    extensions: ['tex2jax.js','mml2jax.js','MathMenu.js','MathZoom.js']," +
+        "    displayAlign: '"+ align +"'," +
+        "    displayIndent: '"+ indent +"'," +
+        "    showMathMenu: true," +
+        "    tex2jax: { " +
+        "        inlineMath: [ ['\\\\(','\\\\)'] ], " +
+        "        displayMath: [ ['$$','$$'] ]," +
+        "        processEscapes: true," +
+        "        preview: 'TeX'," +
+        "    }, " +
+        "    'HTML-CSS': { " +
+        "        styles: { '.MathJax_Display, .MathJax .mo, .MathJax .mi, .MathJax .mn': {color: 'inherit ! important'} }," +
+        "        linebreaks: { automatic: "+ linebreak +", width: '90% container' }," +
+        "    }, " +
+        "}); " +
+        "if ('default' !== 'default') {" +
+            "MathJax.Hub.Register.StartupHook('HTML-CSS Jax Ready',function () {" +
+                "var VARIANT = MathJax.OutputJax['HTML-CSS'].FONTDATA.VARIANT;" +
+                "VARIANT['normal'].fonts.unshift('MathJax_default');" +
+                "VARIANT['bold'].fonts.unshift('MathJax_default-bold');" +
+                "VARIANT['italic'].fonts.unshift('MathJax_default-italic');" +
+                "VARIANT['-tex-mathit'].fonts.unshift('MathJax_default-italic');" +
+            "});" +
+            "MathJax.Hub.Register.StartupHook('SVG Jax Ready',function () {" +
+                "var VARIANT = MathJax.OutputJax.SVG.FONTDATA.VARIANT;" +
+                "VARIANT['normal'].fonts.unshift('MathJax_default');" +
+                "VARIANT['bold'].fonts.unshift('MathJax_default-bold');" +
+                "VARIANT['italic'].fonts.unshift('MathJax_default-italic');" +
+                "VARIANT['-tex-mathit'].fonts.unshift('MathJax_default-italic');" +
+            "});" +
+        "}";
+    (document.body || document.getElementsByTagName('head')[0]).appendChild(mathjaxscript);
+}
+</script>
+    
+        </div>
+        
+<div class=footer>
+   <div class="contact">
+      <p>
+        &raquo;
+        <a href="mailto:gm@nowave.it">gm@nowave.it</a> |
+        <a href="http://github.com/gmodena" target="_blank">github.com/gmodena</a> |
+        <a href="http://twitter.com/gabriele_modena" target="_blank">http://twitter.com/gabriele_modena</a>
+        &laquo;
+      </p>
+    </div>
+  <p>&copy; Copyright <script language="JavaScript">var date = new Date(); document.write(date.getFullYear());</script> by Gabriele Modena</p>
+  <p>  
+    <a href="https://github.com/fjavieralba/flasky">Theme</a>  by <a href="http://fjavieralba.com">fjavieralba</a> (Modified)
+  </p> 
+<!--
+  <p>
+    <div class=social style="font-size: 27px;">
+      <ul>
+        <script language="JavaScript">
+          u = '';
+          s = '';
+          document.write('<a href=\"mailto:' + u + '@' + s + '\" target=\"_blank\">');
+        </script>
+            <li><i class="icon-envelope icon-large"></i> </li>
+        </a>
+        <a href="http://twitter.com/" target="_blank"> <li> <i class="icon-twitter-sign icon-large"> </li></i> </a>
+        <a href="" target="_blank"><li><i class="icon-linkedin-sign icon-large" ></i></li></a>
+        <a href="" target="_blank"> <li> <i class="icon-github-sign icon-large"></i> </li> </a>
+        <a href="" target="_blank"><li> <i class="icon-facebook-sign icon-large"></i></li> </a>
+        <a href="" target="_blank"><li><i class="icon-google-plus-sign icon-large"></i> </li> </a>
+        <a href="" target="_blank"><li><i class="icon-pinterest-sign icon-large"></i></li></a>
+
+
+        <a href="./feeds/all.rss.xml" rel="alternate" title="Recent Blog Posts"><li> <i class="icon-rss icon-large"></i> </li></a>
+      </ul>
+    </div>
+  </p>
+-->
+</div>    </div>
+  </body>
+    <script>
+  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+   (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+   m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+    })(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+
+   ga('create', 'UA-56891536-1', 'auto');
+   ga('send', 'pageview');
+
+   /**
+    * Function that tracks a click on an outbound link in Google Analytics.
+    * This function takes a valid URL string as an argument, and uses that URL string
+    * as the event label.
+    */
+    var trackOutboundLink = function(url) {
+       ga('send', 'event', 'outbound', 'click', url, {'hitCallback':
+         function () {
+         document.location = url;
+         }
+       });
+    }
+</script>
+</html>
+
+
