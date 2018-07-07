@@ -24,10 +24,10 @@
         <div class=body>
     <h1 class="title"> My DIY mechanical keyboard project</h1>
     <p class=date> Fri 06 July 2018 </p>
-<p>Some notes on assembling a DIY programmable mechanical keyboard based on the <a href="http://blog.komar.be/projects/gh60-programmable-keyboard/">GH60 Rev. c</a> pcb.</p>
+    <p>Some notes on assembling a DIY programmable mechanical keyboard based on the <a href="http://blog.komar.be/projects/gh60-programmable-keyboard/">GH60 Rev. c</a> pcb.</p>
 <h2>60% Keyboards</h2>
 <p>I wanted a mechanical keyboard for a while, and towards the end of 2017 I made the mistake of looking for advice on <a href="https://www.reddit.com/r/MechanicalKeyboards/">r/MechanicalKeyboards</a>. My initial idea was to buy a stock 104 key DAS Keyboard. I ended up soldering together 
-a custom 60% programmable keyboard. I love Reddit.</p>
+a custom 60% programmable keyboard. </p>
 <p>As the name suggests, this type of keyboard is 60% the size of a regular 104 keys one. Noticeably the numpad, arrow keys, and <code>F1</code> through <code>F12</code> keys are missing. Their functionality is provided by remapping keys on <em>layers</em>, accessible via function keys. For example on my keyboard arrow keys functionality is accessible on "layer 1", by pressing <code>fn</code> + <code>wasd</code>. </p>
 <p>The assembled board looks like this
 <img alt="gh60 assembled" src="images/gh60/gh60.jpg" /></p>
@@ -40,27 +40,28 @@ a custom 60% programmable keyboard. I love Reddit.</p>
 <li>Soldering wire.</li>
 <li>Tweezers.</li>
 <li>Wire cutter.</li>
+<li>Screwdriver.</li>
 </ul>
 <h3>Hardware</h3>
 <ul>
 <li><a href="http://blog.komar.be/projects/gh60-programmable-keyboard/">GH60 Rev. c</a> programmable board. I went for the "original" pcb sold on <a href="https://techkeys.us">Techkeys</a>.</li>
 <li>Gateron Brown switches.</li>
 <li>GH60 plate mount.</li>
+<li>Black Poker replica plastic case.</li>
 <li>Stabilizers for the spacebar, enter, left/right shift and tab. You'll need these to make sure that the bigger keys won't wiggle around when you click them.</li>
 <li>ANSI layout keycaps. </li>
 <li>1.8mm white diffused LEDs.</li>
 <li>180 Ohm resistors. You'll need these if you want to use LEDs.</li>
+<li>Mini-usb cable.</li>
 </ul>
 <p><img alt="parts" src="images/gh60/parts.jpg" /></p>
 <h3>Software</h3>
-<p>There's a number of opensource firmware available for keyboards based on the AtmelAVR microcontroller.
-Popular choices are <a href="https://github.com/tmk/tmk_keyboard">tmk</a>, <a href="https://qmk.fm">qmk</a> and <a href="https://github.com/dhowland/EasyAVR">EasyAvr</a>.</p>
+<p>There's a number of opensource firmware available for keyboards based on the Atmel AVR microcontroller.
+Popular choices are <a href="https://github.com/tmk/tmk_keyboard">tmk</a>, <a href="https://qmk.fm">qmk</a> and <a href="https://github.com/dhowland/EasyAVR">EasyAvr</a>. Currently I'm using tmk.</p>
 <p>A binary image of the firmware can be flashed using the <code>dfu-programmer</code> utility (<a href="https://dfu-programmer.github.io">https://dfu-programmer.github.io</a>). It's available via homebrew on MacOS and via the repos of all major linux distributions. Each firmware will provide instructions for flashing.</p>
 <h2>Assembly</h2>
-<p>Before starting with soldering, make sure that the board is functional. The gh60 pcb from Techkeys comes with no
-firmware installed. The first thing to do is to flash it, connect it
-to a computer and verify that all keys register. Use a pair of tweezers (or anything conductive) to touch
-the two pins of each key together.</p>
+<p>Before starting with soldering, make sure that the board is functional. The gh60 pcb from Techkeys comes with no firmware installed. The first thing to do is to flash it, connect it
+ 62 to a computer and verify that all keys register. Use a pair of tweezers (or anything conductive) to touch the two pins of each key together.</p>
 <p><img alt="pins" src="images/gh60/pins.jpg" /></p>
 <p>I used the tester at <a href="http://www.keyboardtester.com">http://www.keyboardtester.com</a> to make sure everything worked fine.</p>
 <h3>Resistors</h3>
@@ -83,6 +84,8 @@ There is not much space inside the switch, but I found that 1.8mm fit just right
 <p>Now it's just a matter of inserting the switches in their slots (be careful with their polarity!), paying attention not to bend pins, and patiently solder them. </p>
 <p><img alt="open key" src="images/gh60/keys_soldered.jpg" /> </p>
 <p>The switches I bought came with PCB mount pegs, which I cut off to mount them on the plate.</p>
+<h3>Case</h3>
+<p>Place the assembled board in the case and fix 6 screws. That's it.</p>
 <h2>Conclusion</h2>
 <p>All in all, this was a fun DIY project. I'm happy with the keyboard. The compact layout goes well with the VIM keybindings I use in my editors and shell, and the brown switches are an absolute joy to type on. I have not done any heavy layer customisation yet, but I've seen a few interesting layouts online which I'm looking forward to replicating.</p>
     
@@ -148,6 +151,6 @@ There is not much space inside the switch, but I found that 1.8mm fit just right
          }
        });
     }
-</script>
+	</script>
   </body>
 </html>
