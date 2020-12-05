@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <link href='http://fonts.googleapis.com/css?family=Noticia+Text:400,700' rel='stylesheet' type='text/css' />
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title> AOC2020, Day 5: binary boarding. | nowave.it </title>
+
+    <link rel="stylesheet" href="./theme/css/style.css" type="text/css" />
+    <link rel="stylesheet" href="./theme/css/pygments.css" type="text/css" />
+    <link rel="stylesheet" href="./theme/css/font-awesome.css" type="text/css"/>
+  </head>
+  <body>
+    <div class=container>
+<div class="header">
+    <a href="./">nowave.it</a> <span class="muted"></span>
+</div>
+
+<div class=navigation>
+    <ul>
+    </ul>
+</div>
+<div class=separator></div>        
+        <div class=body>
+    <h1 class="title"> AOC2020, Day 5: binary boarding.</h1>
+    <p class=date> Sat 05 December 2020 </p>
+    <p><a href="https://adventofcode.com/2020/day/5">Day 5 of Advent of Code 2020</a> is a fun
+reference to the <a href="https://en.wikipedia.org/wiki/Binary_space_partitioning">Binary Space Parititioning</a> algorithm. </p>
+<p>Here we are dealing with a particular case of partitioning, that can be summarized as "divide numbers by 2". The problem models a plane with 128 rows, and asks us 
+to code up an heuristic to find our seat, given a list of seats represented by
+9 characters long identifiers.
+The character at position <em>i</em> will tell use whether our seat is in the front or back portion of rows; the alogirthm discards rows recusrively until only our seat is left.</p>
+<p>Coding up the logic verbatim would be cumbersome, with a few interval bound checks.
+The solution is much simpler once we recognize that an identifier is simply the binary representation of the (decimal) seat number.</p>
+<p>In the reminder of this article we'll use binary arithmetics, and a bit of Python,
+to show that this is the case.</p>
+<p>Let's look at the first 7 characters of the boarding pass. We know that <em>[...] these specify exactly one of the 128 
+rows on the plane (numbered 0 through 127) [...]</em>.</p>
+<p>The number of rows, 127, is represented in binary as <code>1111111</code>. </p>
+<div class="highlight"><pre><span></span><code><span class="nb">int</span><span class="p">(</span><span class="s1">&#39;1111111&#39;</span><span class="p">,</span> <span class="n">base</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span>
+<span class="mi">127</span>
+</code></pre></div>
+
+<p>A right bit shift is equivalent to diving the number by 2:</p>
+<div class="highlight"><pre><span></span><code><span class="nb">int</span><span class="p">(</span><span class="s1">&#39;1111111&#39;</span><span class="p">,</span> <span class="n">base</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span>
+<span class="mi">127</span>
+<span class="nb">int</span><span class="p">(</span><span class="s1">&#39;0111111&#39;</span><span class="p">,</span> <span class="n">base</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span>
+<span class="mi">63</span>
+<span class="nb">int</span><span class="p">(</span><span class="s1">&#39;0011111&#39;</span><span class="p">,</span> <span class="n">base</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span>
+<span class="mi">31</span>
+<span class="nb">int</span><span class="p">(</span><span class="s1">&#39;001111&#39;</span><span class="p">,</span> <span class="n">base</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span>
+<span class="mi">15</span>
+<span class="nb">int</span><span class="p">(</span><span class="s1">&#39;000111&#39;</span><span class="p">,</span> <span class="n">base</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span>
+<span class="mi">7</span>
+<span class="nb">int</span><span class="p">(</span><span class="s1">&#39;000011&#39;</span><span class="p">,</span> <span class="n">base</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span>
+<span class="mi">3</span>
+<span class="nb">int</span><span class="p">(</span><span class="s1">&#39;000001&#39;</span><span class="p">,</span> <span class="n">base</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span>
+<span class="mi">1</span>
+</code></pre></div>
+
+<p>Now back to our problem. We are told that:
+<em>[...] Each letter tells you which half of a region the given seat is in. 
+Start with the whole list of rows; the first letter 
+indicates whether the seat is in the <strong>front</strong> (0 through 63)
+or the <strong>back</strong> (64 through 127). The next letter indicates which
+half of that region the seat is in, and so on until 
+you're left with exactly one row. [...]</em></p>
+<p>This is equivalent to setting the leftmost bit to 
+<code>0</code> (<strong>front</strong>: <code>0</code> through 64)  or <code>1</code> (<strong>back</strong>: 64 to 127). In binary, 
+the <strong>front seats</strong> are rows in the range:</p>
+<div class="highlight"><pre><span></span><code><span class="nb">int</span><span class="p">(</span><span class="s1">&#39;0000000&#39;</span><span class="p">,</span> <span class="n">base</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span>
+<span class="mi">0</span>
+</code></pre></div>
+
+<p>to</p>
+<div class="highlight"><pre><span></span><code><span class="nb">int</span><span class="p">(</span><span class="s1">&#39;0111111&#39;</span><span class="p">,</span> <span class="n">base</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span>
+<span class="mi">63</span>
+</code></pre></div>
+
+<p>The <strong>back seats</strong> are rows in the range:</p>
+<div class="highlight"><pre><span></span><code><span class="nb">int</span><span class="p">(</span><span class="s1">&#39;1000000&#39;</span><span class="p">,</span> <span class="n">base</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span>
+<span class="mi">64</span>
+</code></pre></div>
+
+<p>to</p>
+<div class="highlight"><pre><span></span><code><span class="nb">int</span><span class="p">(</span><span class="s1">&#39;1111111&#39;</span><span class="p">,</span> <span class="n">base</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span>
+<span class="mi">127</span>
+</code></pre></div>
+
+<p>The problem statement continues with: [...] <em>The next letter indicates which half of that region the seat is in, and so on until you're left with exactly one row [...]</em>.</p>
+<p>It follows by the arithmetic we've just shown that selecting
+the <strong>lower half (F)</strong> or <strong>upper half (B)</strong> of a region at
+ position <em>i</em> of the boarding pass, is
+equivalent to setting the <em>i</em>-th bit of the binary row number to <code>0</code> or <code>1</code> respectively.</p>
+<p>The same logic applies to the last 3 characters of the 9 character
+boarding pass string. <code>R</code> sets the bit to <code>1</code>, <code>L</code> to <code>0</code>.</p>
+<p>Below is a simple Python function to convert a boarding pass identifier
+to its decimal representation.</p>
+<div class="highlight"><pre><span></span><code><span class="k">def</span> <span class="nf">to_binary</span><span class="p">(</span><span class="n">string</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
+    <span class="n">string</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="n">string</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s2">&quot;B&quot;</span><span class="p">,</span> <span class="s2">&quot;1&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s2">&quot;F&quot;</span><span class="p">,</span> <span class="s2">&quot;0&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s2">&quot;R&quot;</span><span class="p">,</span> <span class="s2">&quot;1&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s2">&quot;L&quot;</span><span class="p">,</span> <span class="s2">&quot;0&quot;</span><span class="p">)</span>
+    <span class="p">)</span>
+    <span class="k">return</span> <span class="nb">int</span><span class="p">(</span><span class="n">string</span><span class="p">,</span> <span class="n">base</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span>
+</code></pre></div>
+
+<p>To convince ourselves this works, let's try it out on the problem
+base cases.</p>
+<div class="highlight"><pre><span></span><code><span class="n">to_binary</span><span class="p">(</span><span class="s1">&#39;FBFBBFFRLR&#39;</span><span class="p">)</span>
+<span class="mi">357</span>
+</code></pre></div>
+
+<div class="highlight"><pre><span></span><code><span class="n">to_binary</span><span class="p">(</span><span class="s1">&#39;BFFFBBFRRR&#39;</span><span class="p">)</span>
+<span class="mi">567</span>
+</code></pre></div>
+
+<div class="highlight"><pre><span></span><code><span class="n">to_binary</span><span class="p">(</span><span class="s1">&#39;FFFBBBFRRR&#39;</span><span class="p">)</span>
+<span class="mi">119</span>
+</code></pre></div>
+
+<div class="highlight"><pre><span></span><code><span class="n">to_binary</span><span class="p">(</span><span class="s1">&#39;BBFFBBFRLL&#39;</span><span class="p">)</span>
+<span class="mi">820</span>
+</code></pre></div>
+
+<p>Once we obtain the seat numebrs in decimal, <code>Part 1</code> and <code>2</code> of the problem
+can be solved with <a href="https://gist.github.com/gmodena/3960fdaf4538c067bfa6b840b1df2c75">a couple of lines of code</a>.</p>
+    
+        </div>
+        
+<div class=footer>
+   <div class="contact">
+      <p>
+        &raquo;
+        <a href="mailto:gm@nowave.it">gm@nowave.it</a> |
+        <a href="http://github.com/gmodena" target="_blank">github.com/gmodena</a> |
+        <a href="http://twitter.com/gabriele_modena" target="_blank">http://twitter.com/gabriele_modena</a>
+        &laquo;
+      </p>
+    </div>
+  <p>&copy; Copyright <script language="JavaScript">var date = new Date(); document.write(date.getFullYear());</script> by Gabriele Modena</p>
+  <p>  
+    <a href="https://github.com/fjavieralba/flasky">Theme</a>  by <a href="http://fjavieralba.com">fjavieralba</a> (Modified)
+  </p> 
+<!--
+  <p>
+    <div class=social style="font-size: 27px;">
+      <ul>
+        <script language="JavaScript">
+          u = '';
+          s = '';
+          document.write('<a href=\"mailto:' + u + '@' + s + '\" target=\"_blank\">');
+        </script>
+            <li><i class="icon-envelope icon-large"></i> </li>
+        </a>
+        <a href="http://twitter.com/" target="_blank"> <li> <i class="icon-twitter-sign icon-large"> </li></i> </a>
+        <a href="" target="_blank"><li><i class="icon-linkedin-sign icon-large" ></i></li></a>
+        <a href="" target="_blank"> <li> <i class="icon-github-sign icon-large"></i> </li> </a>
+        <a href="" target="_blank"><li> <i class="icon-facebook-sign icon-large"></i></li> </a>
+        <a href="" target="_blank"><li><i class="icon-google-plus-sign icon-large"></i> </li> </a>
+        <a href="" target="_blank"><li><i class="icon-pinterest-sign icon-large"></i></li></a>
+
+
+        <a href="./feeds/all.rss.xml" rel="alternate" title="Recent Blog Posts"><li> <i class="icon-rss icon-large"></i> </li></a>
+      </ul>
+    </div>
+  </p>
+-->
+</div>    </div>
+  </body>
+</html>
