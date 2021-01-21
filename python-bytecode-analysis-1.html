@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <script async defer data-domain="nowave.it" src="https://plausible.io/js/plausible.js"></script>
+    <link href='http://fonts.googleapis.com/css?family=Noticia+Text:400,700' rel='stylesheet' type='text/css' />
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title> Python bytecode analysis (1) | nowave.it </title>
+
+    <link rel="stylesheet" href="./theme/css/style.css" type="text/css" />
+    <link rel="stylesheet" href="./theme/css/pygments.css" type="text/css" />
+    <link rel="stylesheet" href="./theme/css/font-awesome.css" type="text/css"/>
+  </head>
+  <body>
+    <div class=container>
+<div class="header">
+    <a href="./">nowave.it</a> <span class="muted"></span>
+</div>
+
+<div class=navigation>
+    <ul>
+    </ul>
+</div>
+<div class=separator></div>        
+        <div class=body>
+    <h1 class="title"> Python bytecode analysis (1)</h1>
+    <p class=date> Thu 21 January 2021 </p>
+    <p>This article documents some experiments in Python bytecode analysis. Relevant code and slides of a recent meetup talk can be found at <a href="https://github.com/gmodena/pycdump">https://github.com/gmodena/pycdump</a>. This work is an evolution of Ned Batchelder's 2008 <a href="http://nedbatchelder.com/blog/200804/the_structure_of_pyc_files.html">The structure of .pyc files</a>. CPython has changed quite a bit since the time that blog was written. In the examples I'll use <code>cpython 3.7</code> as a reference platform.</p>
+<h2>CPython 101</h2>
+<figure>
+<img src="images/pyc/cpython.png" style="display: block; margin-left:0px; margin-right:auto;" alt="cpython code execution"></img>
+ <figcaption style="text-align: center;">Fig 1. cpython code execution</figcaption>
+</figure>
+
+<p>Python is usually referred to as an interpreted language. To be more precise <a href="https://www.python.org/"> <code>CPython</code> </a>, the reference implementation of the Python language, is a <em>bytecode interpreter</em>. Each time a script (a <code>.py</code> file) is executed, a <a href="https://github.com/python/cpython/blob/master/Python/compile.c">compilation step</a> generates bytecode, that is then interpreted and executed by a virtual machine.</p>
+<h2>Bytecode generation</h2>
+<p>When a <code>.py</code> file is imported, the interpreter generates a bunch <code>.pyc</code> files . They contain the <em>compiled bytecode</em> of the imported modules. Their purpose is to avoid compiling the script at each subsequent import if the <code>.pyc</code> is newer than the corresponding <code>.py</code> file.</p>
+<p>The standard library ships with several modules and utility functions to generare, analyse and manipulate bytecode. The  <code>compileall</code> module, for instance, can be used as a script to compile sources. Let's borrow Ned Batchelder's <code>example.py</code>:</p>
+<div class="highlight"><pre><span></span><code>$ cat example.py
+a, <span class="nv">b</span> <span class="o">=</span> <span class="m">1</span>, <span class="m">0</span>
+<span class="k">if</span> a or b:
+    print<span class="o">(</span><span class="s2">&quot;Hello&quot;</span>, a<span class="o">)</span>
+</code></pre></div>
+
+<p>We can compile it with:</p>
+<div class="highlight"><pre><span></span><code>$ python -m compileall example.py
+</code></pre></div>
+
+<p>The resulting bytecode is found under the <code>__pycache__</code> directory.</p>
+<div class="highlight"><pre><span></span><code>$ cat __pycache__/example.cpython-37.pyc
+B
+?S<span class="s2">&quot;^=?@s*d\ZZeserede?iZded&lt;dS))??ZHellorrN)?a?b?print?c?rr?</span>
+<span class="s2">example.p</span>
+</code></pre></div>
+
+<p>Bytecode looks like... bytes.</p>
+<h2>Bytecode execution</h2>
+<p>CPython is a <a href="https://en.wikipedia.org/wiki/Stack_machine">stack-based virtual machine</a>. Any function, name or symbol is pushed onto a stack. The interpreter performs operations by popping elements from the stack and pushing back results. When a function is called, a new <a href="https://en.wikipedia.org/wiki/Call_stack#STACK-FRAME">frame</a> is pushed onto the stack. A frame is an area of memory which contains the function name, arguments and a the program's line number at which to resume execution once the function returns. Every time a function returns, its frame is popped.  The <code>inspect</code> module can be used to inspect the stack of a python script or (repl session). The statements below have been executed in <code>ipython</code>: </p>
+<div class="highlight"><pre><span></span><code><span class="o">&gt;&gt;&gt;</span> <span class="kn">import</span> <span class="nn">inspect</span> 
+<span class="o">&gt;&gt;&gt;</span> <span class="nb">print</span><span class="p">(</span><span class="n">inspect</span><span class="o">.</span><span class="n">stack</span><span class="p">())</span>
+<span class="p">[</span><span class="n">FrameInfo</span><span class="p">(</span><span class="n">frame</span><span class="o">=&lt;</span><span class="n">frame</span> <span class="n">at</span> <span class="mh">0x7f95806d1ba8</span><span class="p">,</span> <span class="n">file</span> <span class="s1">&#39;&lt;ipython-input-1-80e4091818df&gt;&#39;</span><span class="p">,</span> <span class="n">line</span> <span class="mi">2</span><span class="p">,</span> <span class="n">code</span> <span class="o">&lt;</span><span class="n">module</span><span class="o">&gt;&gt;</span><span class="p">,</span> <span class="n">filename</span><span class="o">=</span><span class="s1">&#39;&lt;ipython-input-1-80e4091818df&gt;&#39;</span><span class="p">,</span> <span class="n">lineno</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">function</span><span class="o">=</span><span class="s1">&#39;&lt;module&gt;&#39;</span><span class="p">,</span> <span class="n">code_context</span><span class="o">=</span><span class="p">[</span><span class="s1">&#39;print(inspect.stack())</span><span class="se">\n</span><span class="s1">&#39;</span><span class="p">],</span> <span class="n">index</span><span class="o">=</span><span class="mi">0</span><span class="p">),</span> <span class="n">FrameInfo</span><span class="p">(</span><span class="n">frame</span><span class="o">=&lt;</span><span class="n">frame</span> <span class="n">at</span> <span class="mh">0x7f958051af48</span><span class="p">,</span> <span class="n">file</span> <span class="s1">&#39;/Users/gmodena/miniconda3/lib/python3.7/site-packages/IPython/core/interactiveshell.py&#39;</span><span class="p">,</span> <span class="n">line</span> <span class="mi">3417</span><span class="p">,</span> <span class="n">code</span> <span class="n">run_code</span><span class="o">&gt;</span><span class="p">,</span> <span class="n">filename</span><span class="o">=</span><span class="s1">&#39;/Users/gmodena/miniconda3/lib/python3.7/site-packages/IPython/core/interactiveshell.py&#39;</span><span class="p">,</span> <span class="n">lineno</span><span class="o">=</span><span class="mi">3417</span><span class="p">,</span> <span class="n">function</span><span class="o">=</span><span class="s1">&#39;run_code&#39;</span><span class="p">,</span> <span class="n">code_context</span><span class="o">=</span><span class="p">[</span><span class="s1">&#39;                    exec(code_obj, self.user_global_ns, self.user_ns)</span><span class="se">\n</span><span class="s1">&#39;</span><span class="p">],</span> <span class="n">index</span><span class="o">=</span><span class="mi">0</span><span class="p">),</span> 
+
+ <span class="o">...</span>
+
+ <span class="n">FrameInfo</span><span class="p">(</span><span class="n">frame</span><span class="o">=&lt;</span><span class="n">frame</span> <span class="n">at</span> <span class="mh">0x7f957f0d3bd8</span><span class="p">,</span> <span class="n">file</span> <span class="s1">&#39;/Users/gmodena/miniconda3/lib/python3.7/site-packages/IPython/__init__.py&#39;</span><span class="p">,</span> <span class="n">line</span> <span class="mi">126</span><span class="p">,</span> <span class="n">code</span> <span class="n">start_ipython</span><span class="o">&gt;</span><span class="p">,</span> <span class="n">filename</span><span class="o">=</span><span class="s1">&#39;/Users/gmodena/miniconda3/lib/python3.7/site-packages/IPython/__init__.py&#39;</span><span class="p">,</span> <span class="n">lineno</span><span class="o">=</span><span class="mi">126</span><span class="p">,</span> <span class="n">function</span><span class="o">=</span><span class="s1">&#39;start_ipython&#39;</span><span class="p">,</span> <span class="n">code_context</span><span class="o">=</span><span class="p">[</span><span class="s1">&#39;    return launch_new_instance(argv=argv, **kwargs)</span><span class="se">\n</span><span class="s1">&#39;</span><span class="p">],</span> <span class="n">index</span><span class="o">=</span><span class="mi">0</span><span class="p">),</span> <span class="n">FrameInfo</span><span class="p">(</span><span class="n">frame</span><span class="o">=&lt;</span><span class="n">frame</span> <span class="n">at</span> <span class="mh">0x7f957b7889f8</span><span class="p">,</span> <span class="n">file</span> <span class="s1">&#39;/Users/gmodena/miniconda3/bin/ipython&#39;</span><span class="p">,</span> <span class="n">line</span> <span class="mi">10</span><span class="p">,</span> <span class="n">code</span> <span class="o">&lt;</span><span class="n">module</span><span class="o">&gt;&gt;</span><span class="p">,</span> <span class="n">filename</span><span class="o">=</span><span class="s1">&#39;/Users/gmodena/miniconda3/bin/ipython&#39;</span><span class="p">,</span> <span class="n">lineno</span><span class="o">=</span><span class="mi">10</span><span class="p">,</span> <span class="n">function</span><span class="o">=</span><span class="s1">&#39;&lt;module&gt;&#39;</span><span class="p">,</span> <span class="n">code_context</span><span class="o">=</span><span class="p">[</span><span class="s1">&#39;    sys.exit(start_ipython())</span><span class="se">\n</span><span class="s1">&#39;</span><span class="p">],</span> <span class="n">index</span><span class="o">=</span><span class="mi">0</span><span class="p">)]</span>
+</code></pre></div>
+
+<p>The output shows a list of frames (wrapped in <code>FrameInfo</code> objects), with the most recent function call at the bottom  - <code>print(inspect.stack()</code>- all the way up to the <code>ipython</code> session startup.</p>
+<p>More details details of bytecode execution can be found in <a href="https://github.com/python/cpython/blob/master/Python/ceval.c">ceval.c</a>. </p>
+<h2>Structure of .pyc files</h2>
+<p>A <code>pyc</code> file contains a 16 byte <em>header</em> (four 32-bit words) and a variable size <em>payload</em>.</p>
+<figure>
+<img src="images/pyc/pyc.png" style="display: block; margin-left:0px; margin-right:auto;" alt="pyc files"></img>
+ <figcaption style="text-align: center;">Fig 2. pyc file layout</figcaption>
+</figure>
+
+<ul>
+<li>Bytes 0 to 3 contain a <em>magic number</em>, used to differentiate which version of Python generated the file. See https://docs.python.org/3/library/importlib.html#importlib.util.MAGIC_NUMBER</li>
+<li>Bytes 4 to 7 contain a <em>bit field (<a href="https://www.python.org/dev/peps/pep-0552/">PEP 552</a>)</em>. At least on 3.7.3 this is left empty. In the future it should become a building block for reproducible builds.</li>
+<li>Bytes 8 to 11 contain the source file <em>modification date</em> timestamp.</li>
+<li>Bytes 12 to 15 contain the source <em>file size</em>.</li>
+</ul>
+<p>From byte 16 onwards the payload stores a <a href="https://docs.python.org/3/library/marshal.html">marshalled</a> <a href="https://docs.python.org/3/c-api/code.html">code object</a>. Code objects expose, among others, the following  attributes:</p>
+<ul>
+<li><strong>co_argcount</strong>     number of arguments (not including * or ** args)</li>
+<li><strong>co_code</strong>         string of raw compiled bytecode</li>
+<li><strong>co_consts</strong>       tuple of constants used in the bytecode. It is a nested data structure that can contain code object instances.</li>
+<li><strong>co_filename</strong>     name of file in which this code object was created</li>
+<li><strong>co_firstlineno</strong>  number of first line in Python source code</li>
+<li><strong>co_flags</strong>        bitmap: 1=optimized | 2=newlocals | 4=<em>arg | 8=</em>*arg</li>
+<li><strong>co_lnotab</strong>       encoded mapping of line numbers to bytecode indices</li>
+<li><strong>co_name</strong>         name with which this code object was defined</li>
+<li><strong>co_names</strong>        tuple of names of local variables</li>
+<li><strong>co_nlocals</strong>      number of local variables</li>
+<li><strong>co_stacksize</strong>    virtual machine stack space required</li>
+<li><strong>co_varnames</strong>     tuple of names of arguments and local variables</li>
+</ul>
+<h2>Code Objects</h2>
+<p>Everything in  python is an object and, once compiled, each object will store its own bytecode. Let's run a simple example in the repl:</p>
+<div class="highlight"><pre><span></span><code><span class="o">&gt;&gt;&gt;</span> <span class="k">def</span> <span class="nf">sum</span><span class="p">(</span><span class="n">a</span><span class="p">,</span> <span class="n">b</span><span class="p">):</span>
+         <span class="k">return</span> <span class="n">a</span> <span class="o">+</span> <span class="n">b</span>
+
+<span class="o">&gt;&gt;&gt;</span> <span class="nb">type</span><span class="p">(</span><span class="nb">sum</span><span class="p">)</span>
+<span class="n">function</span>
+</code></pre></div>
+
+<p>Functions are objects too. The bytecode of the <code>sum</code> function is accessible via the <code>__code__</code> attribute.</p>
+<div class="highlight"><pre><span></span><code><span class="o">&gt;&gt;&gt;</span> <span class="nb">sum</span><span class="o">.</span><span class="vm">__code__</span> <span class="c1"># a code object to be executed</span>
+<span class="o">&lt;</span><span class="n">code</span> <span class="nb">object</span> <span class="nb">sum</span> <span class="n">at</span> <span class="mh">0x7fc7fa7ca5d0</span><span class="p">,</span> <span class="n">file</span> <span class="s2">&quot;&lt;ipython-input-1-5c0b117d5737&gt;&quot;</span><span class="p">,</span> <span class="n">line</span> <span class="mi">1</span><span class="o">&gt;</span>
+</code></pre></div>
+
+<p><code>__code__</code> is a code object. We can inspect its raw bytecode strings representation (<em>byte literals</em>)  with:  </p>
+<div class="highlight"><pre><span></span><code><span class="o">&gt;&gt;&gt;</span> <span class="nb">print</span><span class="p">(</span><span class="nb">sum</span><span class="o">.</span><span class="vm">__code__</span><span class="o">.</span><span class="n">co_code</span><span class="p">)</span>
+<span class="sa">b</span><span class="s1">&#39;|</span><span class="se">\x00</span><span class="s1">|</span><span class="se">\x01\x17\x00</span><span class="s1">S</span><span class="se">\x00</span><span class="s1">&#39;</span>
+<span class="o">&gt;&gt;&gt;</span> <span class="nb">print</span><span class="p">([</span><span class="n">co</span> <span class="k">for</span> <span class="n">co</span> <span class="ow">in</span> <span class="nb">sum</span><span class="o">.</span><span class="vm">__code__</span><span class="o">.</span><span class="n">co_code</span><span class="p">])</span>
+<span class="p">[</span><span class="mi">124</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">124</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">23</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">83</span><span class="p">,</span> <span class="mi">0</span><span class="p">]</span>
+</code></pre></div>
+
+<p>This string represents a list of <a href="https://en.wikipedia.org/wiki/Opcode">opcodes</a> and their arguments (if any), that will be interpreted and executed by the program loop in <code>ceval.c</code>. The <code>dis</code> module can be used to disassemble bytecode to human readable form.</p>
+<div class="highlight"><pre><span></span><code><span class="o">&gt;&gt;&gt;</span> <span class="kn">import</span> <span class="nn">dis</span>
+<span class="o">&gt;&gt;&gt;</span> <span class="n">dis</span><span class="o">.</span><span class="n">dis</span><span class="p">(</span><span class="nb">sum</span><span class="p">)</span>
+  <span class="mi">2</span>           <span class="mi">0</span> <span class="n">LOAD_FAST</span>                <span class="mi">0</span> <span class="p">(</span><span class="n">a</span><span class="p">)</span>
+              <span class="mi">2</span> <span class="n">LOAD_FAST</span>                <span class="mi">1</span> <span class="p">(</span><span class="n">b</span><span class="p">)</span>
+              <span class="mi">4</span> <span class="n">BINARY_ADD</span>
+              <span class="mi">6</span> <span class="n">RETURN_VALUE</span>
+</code></pre></div>
+
+<p><code>sum</code> has been assembled into the following operations:</p>
+<ul>
+<li>
+<p><code>LOAD_FAST &lt;index&gt;</code>  (opcode <code>124</code> in the byte string) pushes the function's arguments (<code>a</code> and <code>b</code>) at index position <code>0</code> and <code>1</code> on the stack. </p>
+</li>
+<li>
+<p><code>BINARY_ADD</code> (opcode <code>23</code>) pops two elements from the stack (<code>b</code> and <code>a</code>), adds them together, and pushes the results back on the stack</p>
+</li>
+<li><code>RETURN_VALUE</code> pops an element from the stack (the function return value)</li>
+</ul>
+<h1>Putting it all together: a basic disassembler</h1>
+<p><a href="https://github.com/gmodena/pycdump/blob/master/dump.py">dump.py</a> contains a simple, very much limited, disassembler implemented using standard library modules. It loads a <code>pyc</code> file, and extracts the header field-by-field, reading 4 bytes at a time.</p>
+<div class="highlight"><pre><span></span><code><span class="n">FIELD_SIZE</span> <span class="o">=</span> <span class="mi">4</span>  <span class="c1"># 32 // 8</span>
+
+<span class="k">def</span> <span class="nf">main</span><span class="p">(</span><span class="n">fname</span><span class="p">):</span>
+    <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">fname</span><span class="p">,</span> <span class="s2">&quot;rb&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">infile</span><span class="p">:</span>
+        <span class="c1"># Header: bytes 0 - 3</span>
+        <span class="n">magic_number</span> <span class="o">=</span> <span class="n">binascii</span><span class="o">.</span><span class="n">hexlify</span><span class="p">(</span><span class="n">infile</span><span class="o">.</span><span class="n">read</span><span class="p">(</span><span class="n">FIELD_SIZE</span><span class="p">))</span>
+        <span class="c1"># Header: bytes 4 - 7</span>
+        <span class="n">bit_field</span> <span class="o">=</span> <span class="n">infile</span><span class="o">.</span><span class="n">read</span><span class="p">(</span><span class="n">FIELD_SIZE</span><span class="p">)</span>
+        <span class="c1"># Header: bytes 8 - 11</span>
+        <span class="n">moddate</span> <span class="o">=</span> <span class="n">infile</span><span class="o">.</span><span class="n">read</span><span class="p">(</span><span class="n">FIELD_SIZE</span><span class="p">)</span>
+        <span class="c1"># Header: bytes 12 - 15</span>
+        <span class="n">source_size</span> <span class="o">=</span> <span class="n">infile</span><span class="o">.</span><span class="n">read</span><span class="p">(</span><span class="n">FIELD_SIZE</span><span class="p">)</span>
+        <span class="n">modtime</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">asctime</span><span class="p">(</span><span class="n">time</span><span class="o">.</span><span class="n">localtime</span><span class="p">(</span><span class="n">struct</span><span class="o">.</span><span class="n">unpack</span><span class="p">(</span><span class="s2">&quot;=L&quot;</span><span class="p">,</span> <span class="n">moddate</span><span class="p">)[</span><span class="mi">0</span><span class="p">]))</span>
+        <span class="n">source_size</span> <span class="o">=</span> <span class="n">struct</span><span class="o">.</span><span class="n">unpack</span><span class="p">(</span><span class="s2">&quot;=L&quot;</span><span class="p">,</span> <span class="n">source_size</span><span class="p">)</span>
+</code></pre></div>
+
+<p>From byte 16 onwards it extracts the payload and reconstructs the program structure as a list of code objects (<code>frames</code>). Code objects in <code>pyc</code> files are serialised using an internal binary format. The <a href="https://docs.python.org/3/library/marshal.html"> <code>marshal</code></a> module comes with utility functions to manipulate it.</p>
+<div class="highlight"><pre><span></span><code>        <span class="c1"># Payload : bytes 16 - ...</span>
+        <span class="n">code_obj</span> <span class="o">=</span> <span class="n">marshal</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">infile</span><span class="p">)</span>
+        <span class="n">frames</span> <span class="o">=</span> <span class="n">dump</span><span class="p">(</span><span class="n">code_obj</span><span class="p">)</span>
+</code></pre></div>
+
+<p>Finally, it loops over the code objects and <a href="https://docs.python.org/3/library/dis.html#dis.disassemble">disassembles</a> the binary. </p>
+<div class="highlight"><pre><span></span><code>        <span class="k">for</span> <span class="n">tpl</span> <span class="ow">in</span> <span class="n">frames</span><span class="p">:</span>
+            <span class="n">dis</span><span class="o">.</span><span class="n">disassemble</span><span class="p">(</span><span class="n">tpl</span><span class="p">[</span><span class="mi">2</span><span class="p">])</span>
+</code></pre></div>
+
+<h3>Unmarshall and dump the code object</h3>
+<p><code>dump()</code> is a utility functions that recursively (and naively) traverses the call stack and returns a list of objects sorted by their first line in the python source code (<code>code_obj.co_firstlineno</code>).</p>
+<div class="highlight"><pre><span></span><code><span class="k">def</span> <span class="nf">dump</span><span class="p">(</span><span class="n">code_obj</span><span class="p">):</span>
+    <span class="n">frames</span> <span class="o">=</span> <span class="p">[]</span>
+
+    <span class="k">def</span> <span class="nf">ddump</span><span class="p">(</span><span class="n">code_obj</span><span class="p">):</span>
+        <span class="k">for</span> <span class="n">const</span> <span class="ow">in</span> <span class="n">code_obj</span><span class="o">.</span><span class="n">co_consts</span><span class="p">:</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">const</span><span class="p">,</span> <span class="n">CodeType</span><span class="p">):</span>
+                <span class="n">ddump</span><span class="p">(</span><span class="n">const</span><span class="p">)</span>
+        <span class="n">frames</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">code_obj</span><span class="o">.</span><span class="n">co_filename</span><span class="p">,</span> <span class="n">code_obj</span><span class="o">.</span><span class="n">co_firstlineno</span><span class="p">,</span> <span class="n">code_obj</span><span class="p">))</span>
+
+    <span class="n">ddump</span><span class="p">(</span><span class="n">code_obj</span><span class="p">)</span>
+    <span class="n">frames</span><span class="o">.</span><span class="n">sort</span><span class="p">(</span><span class="n">key</span><span class="o">=</span><span class="k">lambda</span> <span class="n">tpl</span><span class="p">:</span> <span class="n">tpl</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span>
+    <span class="k">return</span> <span class="n">frames</span>
+</code></pre></div>
+
+<h3>Disassemble</h3>
+<p>The code below shows the disasembler output executed on the compiled <a href="https://github.com/gmodena/pycdump/blob/master/example.py"> <code>example.py</code> script</a>.</p>
+<div class="highlight"><pre><span></span><code>$ python dump.py __pycache__/example.cpython-37.pyc
+File name: __pycache__/example.cpython-37.pyc
+Magic number: b<span class="s1">&#39;420d0d0a&#39;</span>
+Bit fieldb<span class="s1">&#39;\x00\x00\x00\x00&#39;</span>
+Modification time: Sat Jan <span class="m">18</span> <span class="m">01</span>:55:13 <span class="m">2020</span>
+Source size: <span class="o">(</span><span class="m">46</span>,<span class="o">)</span>
+
+
+  <span class="m">1</span>           <span class="m">0</span> LOAD_CONST               <span class="m">0</span> <span class="o">((</span><span class="m">1</span>, <span class="m">0</span><span class="o">))</span>
+              <span class="m">2</span> UNPACK_SEQUENCE          <span class="m">2</span>
+              <span class="m">4</span> STORE_NAME               <span class="m">0</span> <span class="o">(</span>a<span class="o">)</span>
+              <span class="m">6</span> STORE_NAME               <span class="m">1</span> <span class="o">(</span>b<span class="o">)</span>
+
+  <span class="m">2</span>           <span class="m">8</span> LOAD_NAME                <span class="m">0</span> <span class="o">(</span>a<span class="o">)</span>
+             <span class="m">10</span> POP_JUMP_IF_TRUE        <span class="m">16</span>
+             <span class="m">12</span> LOAD_NAME                <span class="m">1</span> <span class="o">(</span>b<span class="o">)</span>
+             <span class="m">14</span> POP_JUMP_IF_FALSE       <span class="m">26</span>
+
+  <span class="m">3</span>     &gt;&gt;   <span class="m">16</span> LOAD_NAME                <span class="m">2</span> <span class="o">(</span>print<span class="o">)</span>
+             <span class="m">18</span> LOAD_CONST               <span class="m">1</span> <span class="o">(</span><span class="s1">&#39;Hello&#39;</span><span class="o">)</span>
+             <span class="m">20</span> LOAD_NAME                <span class="m">0</span> <span class="o">(</span>a<span class="o">)</span>
+             <span class="m">22</span> CALL_FUNCTION            <span class="m">2</span>
+             <span class="m">24</span> POP_TOP
+        &gt;&gt;   <span class="m">26</span> LOAD_CONST               <span class="m">2</span> <span class="o">(</span>None<span class="o">)</span>
+             <span class="m">28</span> RETURN_VALUE
+</code></pre></div>
+
+<h1>Conclusion</h1>
+<p>This article gave a high level overview of the CPython virtual machine, and some of the binary analysis tools available in the standard library. There are a ton of use cases and projects that greatly expand on this topic. Some of my favourite are:</p>
+<ul>
+<li>The <a href="https://coverage.readthedocs.io/en/coverage-5.3/howitworks.html">coverage</a> package.</li>
+<li><a href="https://www.python.org/dev/peps/pep-0552/">PEP-552</a>.</li>
+<li>All things reverse engineering and <a href="https://or10nlabs.tech/reversing-a-simple-python-ransomware/">malware analysis</a>.  </li>
+</ul>
+    
+        </div>
+        
+<div class=footer>
+   <div class="contact">
+      <p>
+        &raquo;
+        <a href="mailto:gm@nowave.it">gm@nowave.it</a> |
+        <a href="http://github.com/gmodena" target="_blank">github.com/gmodena</a> |
+        <a href="http://twitter.com/gabriele_modena" target="_blank">http://twitter.com/gabriele_modena</a>
+        &laquo;
+      </p>
+    </div>
+  <p>&copy; Copyright <script language="JavaScript">var date = new Date(); document.write(date.getFullYear());</script> by Gabriele Modena</p>
+  <p>  
+    <a href="https://github.com/fjavieralba/flasky">Theme</a>  by <a href="http://fjavieralba.com">fjavieralba</a> (Modified)
+  </p> 
+<!--
+  <p>
+    <div class=social style="font-size: 27px;">
+      <ul>
+        <script language="JavaScript">
+          u = '';
+          s = '';
+          document.write('<a href=\"mailto:' + u + '@' + s + '\" target=\"_blank\">');
+        </script>
+            <li><i class="icon-envelope icon-large"></i> </li>
+        </a>
+        <a href="http://twitter.com/" target="_blank"> <li> <i class="icon-twitter-sign icon-large"> </li></i> </a>
+        <a href="" target="_blank"><li><i class="icon-linkedin-sign icon-large" ></i></li></a>
+        <a href="" target="_blank"> <li> <i class="icon-github-sign icon-large"></i> </li> </a>
+        <a href="" target="_blank"><li> <i class="icon-facebook-sign icon-large"></i></li> </a>
+        <a href="" target="_blank"><li><i class="icon-google-plus-sign icon-large"></i> </li> </a>
+        <a href="" target="_blank"><li><i class="icon-pinterest-sign icon-large"></i></li></a>
+
+
+        <a href="./feeds/all.rss.xml" rel="alternate" title="Recent Blog Posts"><li> <i class="icon-rss icon-large"></i> </li></a>
+      </ul>
+    </div>
+  </p>
+-->
+</div>    </div>
+  </body>
+</html>
