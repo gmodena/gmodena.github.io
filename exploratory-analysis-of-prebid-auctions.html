@@ -63,7 +63,7 @@
 <p>Bidders frequency tells how how often Prebid partners are offered the possibility to take part in an auction. It's a proxy measure of how many third parties can track a user on a give website. Here I'm counting how many bid requests were issued (e.g. how many advertisers were given the option to bid on my attention). For a publisher, a more interesting metric would be how many Prebid partners returned a valid bid (some degree of logging is offered by the webext, but capturing responses is tricky).</p>
 <p>The top 5 partners account for 70% of all bid requests, and 35% of the requests in this dataset are issued to <a href="https://en.wikipedia.org/wiki/DoubleClick">Google DoubleClick (DFP)</a> alone.</p>
 <figure>
-<img src="figure/bidders_cumsum.png" style="display: block; margin-left:0px; margin-right:auto;" alt="Cumulative sum of bidders"></img>
+<img src="images/prebid/bidders_cumsum.png" style="display: block; margin-left:0px; margin-right:auto;" alt="Cumulative sum of bidders"></img>
 
  <figcaption style="text-align: center;">Figure 2. Cumulative sum of bids</figcaption>
 
@@ -116,7 +116,7 @@ Given the heuristic definition of auction as <em>bids per visit, per page</em>, 
 </table>
 <p>On average we observe 26 bid requests per auction, with a  large standard deviation (61) and a median value of 15 requests per auction. One datapoint stands out where 768 bids where issued during a page view. It was at this referrer: <a href="https://brickset.com/article/48472/review-21321-international-space-station">https://brickset.com/article/48472/review-21321-international-space-station</a>. Cool toy, spammy website.
 The boxplot below (Figure 3) shows that more outliers are present in data.</p>
-<p><img src="figure/auction_density.png" style="display: block; margin-left:0px; margin-right:auto;" alt="Auction density"></img></p>
+<p><img src="images/prebid/auction_density.png" style="display: block; margin-left:0px; margin-right:auto;" alt="Auction density"></img></p>
 <figcaption style="text-align: center;">Figure 3. Auction density (bids per auction)</figcaption>
 
 </figure>
