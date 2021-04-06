@@ -29,7 +29,8 @@
 <p>This article documents some experiments in tracking a specific type of advertisement tracker. It contains some exploratory analysis of bidding dynamics in a client-side auctioning technology (<a href="https://prebid.org/">Prebid</a>). Inspired by the quantified self movement, this is <a href="https://journals.sagepub.com/doi/full/10.1177/0963662519888757">an attempt at self-experimentation</a>; and a itch I had to scratch to follow up to <a href="https://www.iab.it/wp-content/uploads/2016/03/ImproveDigital___Dinamiche_aste_RTB_8497.pdf">research I used to do back in the day</a>. I don't claim any statistical significance whatsoever in the figures reported (it's a sample of n=1 subjects). Even though I wear an ad-blocker everywhere I go, I'm interested in learning who is bidding on my <a href="https://en.wikipedia.org/wiki/Attention_economy">attention</a>, and how much they are willing to pay for it.</p>
 <h2>Online auctions</h2>
 <p>Over the past decade ad sales have become been largely automated and hyper-personalised. A driving force has been the <a href="https://en.wikipedia.org/wiki/Real-time_bidding">real-time bidding protocol</a>, that is a technology stack that allows inventory to be sold on a per <em>impression</em> basis, via an auction that happens in under 100ms every time a user visits a web page. Figure 1. shows a typical transaction that happens during a page view.</p>
-<p><img src="figure/online_auction.png" style="display: block; margin-left:0px; margin-right:auto;" alt="Cumulative sum of bidders"></img></p>
+<figure>
+ <img src="images/prebid/online_auction.png" style="display: block; margin-left:0px; margin-right:auto;" alt="Online auction"></img>
 <figcaption style="text-align: center;">Figure 1. Online auctions</figcaption>
 
 </figure>
@@ -122,7 +123,8 @@ The boxplot below (Figure 3) shows that more outliers are present in data.</p>
 <h3>Co-occurrence of bidders</h3>
 <p>This metric shows how many Prebid partners are concurrently integrated on a page. That is, how likely they are to take part in the same auction.</p>
 <p>We saw that 5 partners make up ~70% of all the bid requests. The heatmap below shows the co-occurence frequency of the top 20 bidders in the dataset: DFP, Amazon, AppNexus, Rubicon, Openx, Index, GumGum, Pubmatic, Criteo, TripleLift, Spotx, Teads, 33Across, PulsePoint, Media.net, RhythmOne, IAS, DistrictmDMX, Sonobi.</p>
-<p><img src="figure/bidders_cooc.png" style="display: block; margin-left:0px; margin-right:auto;" alt="Bidders co-occurrency"></img></p>
+<figure>
+<img src="images/prebid/bidders_cooc.png" style="display: block; margin-left:0px; margin-right:auto;" alt="Bidders co-occurrency"></img>
 <figcaption style="text-align: center;">Figure 4. Bidders co-occurrency</figcaption>
 
 </figure>
