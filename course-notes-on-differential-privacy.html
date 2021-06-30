@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <script async defer data-domain="nowave.it" src="https://plausible.io/js/plausible.js"></script>
+    <link href='http://fonts.googleapis.com/css?family=Noticia+Text:400,700' rel='stylesheet' type='text/css' />
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title> Course notes on differential privacy | nowave.it </title>
+
+    <link rel="stylesheet" href="./theme/css/style.css" type="text/css" />
+    <link rel="stylesheet" href="./theme/css/pygments.css" type="text/css" />
+    <link rel="stylesheet" href="./theme/css/font-awesome.css" type="text/css"/>
+  </head>
+  <body>
+    <div class=container>
+<div class="header">
+    <a href="./">nowave.it</a> <span class="muted"></span>
+</div>
+
+<div class=navigation>
+    <ul>
+    </ul>
+</div>
+<div class=separator></div>        
+        <div class=body>
+    <h1 class="title"> Course notes on differential privacy</h1>
+    <p class=date> Mon 28 June 2021 </p>
+    <p>This article contains my course notes for <a href="https://www.udacity.com/course/secure-and-private-ai--ud185">Secure and Private AI</a> offered by Udacity.</p>
+<h2>Definitions</h2>
+<p>Differential Privacy is a measure of how much information is leaked when querying a database. An intuition for privacy is constructed from the following building blocks:</p>
+<p>1) An <em>initial database</em> (e.g a binary Pytorch tensor). </p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span> <span class="nn">torch</span>
+<span class="k">def</span> <span class="nf">init_db</span><span class="p">(</span><span class="n">num_entries</span> <span class="o">=</span> <span class="mi">5000</span><span class="p">):</span>
+   <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">rand</span><span class="p">(</span><span class="n">num_entries</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mf">0.5</span>
+</code></pre></div>
+
+<p>2) A set of <em>n parallel databases</em>. These are copies of the initial database with an element removed.</p>
+<div class="highlight"><pre><span></span><code><span class="kn">from</span> <span class="nn">copy</span> <span class="kn">import</span> <span class="n">copy</span>
+
+<span class="k">def</span> <span class="nf">get_parallel_db</span><span class="p">(</span><span class="n">db</span><span class="p">,</span> <span class="n">remove_index</span><span class="p">):</span>
+   <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">cat</span><span class="p">((</span><span class="n">db</span><span class="p">[:</span><span class="n">remove_index</span><span class="p">],</span> <span class="n">db</span><span class="p">[</span><span class="n">remove_index</span><span class="o">+</span><span class="mi">1</span><span class="p">:]))</span>
+
+<span class="k">def</span> <span class="nf">parallel_dbs</span><span class="p">(</span><span class="n">db</span><span class="p">):</span>
+   <span class="n">dbs</span> <span class="o">=</span> <span class="p">[]</span>
+
+   <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">db</span><span class="p">)):</span>
+       <span class="n">dbs</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">get_parallel_db</span><span class="p">(</span><span class="n">db</span><span class="p">,</span> <span class="n">i</span><span class="p">))</span>
+   <span class="k">return</span> <span class="n">dbs</span>
+</code></pre></div>
+
+<p>Queries on this database, and its parallels, are operations on its elements. In the lectures we worked with tensors, arithmetics (<code>sum()</code>) and simple statistics (<code>mean()</code>). In practice, these could be aggregation queries in a relational database, or stochastic functions in the training of a machine learning model.</p>
+<h2>Evaluating the privacy of a function</h2>
+<p>To evaluate if a query is leaking private information, we calculate the maximum amount of change when it is performed on all parallel databases. This metric is called <em>sensitivity</em>. In the lectures, and literature, <em>sensitivity</em> is expressed in terms the <a href="https://en.wikipedia.org/wiki/Taxicab_geometry">L1 norm</a>. A bit more formally, if <span class="math">\(X\)</span> is the original database and <span class="math">\(x_a, x_b\)</span> its parallels, the sensitivity of a query <span class="math">\(q\)</span> is defined as</p>
+<div class="math">$$sensitivity = max_{x_a, x_b \subseteq X} ||q(x_a) - q(x_b)||_{1}$$</div>
+<p>Experimentally, we learn that the <code>mean()</code> query has lower sensitivity than the <code>sum()</code> query. As a third example we examine the senstivity of a <code>threshold()</code> function. </p>
+<p>Finally, we show that none of these functions are differentially private by performing an adversarial attack on them. </p>
+<div class="highlight"><pre><span></span><code><span class="c1"># create a database</span>
+<span class="n">db</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">create_db_and_parallels</span><span class="p">(</span><span class="mi">5000</span><span class="p">)</span>
+
+<span class="c1"># we look at the value of row 10 (arbitrarly picked)</span>
+<span class="n">db</span><span class="p">[</span><span class="mi">10</span><span class="p">]</span>
+<span class="c1"># We discard row 10, and perform a number of attacks on the parallel dbs to recover its value.</span>
+<span class="n">pdb</span> <span class="o">=</span> <span class="n">get_parallel_db</span><span class="p">(</span><span class="n">db</span><span class="p">,</span> <span class="n">remove_index</span><span class="o">=</span><span class="mi">10</span><span class="p">)</span>
+
+<span class="c1"># Attack against the sum() query</span>
+<span class="n">th</span> <span class="o">=</span> <span class="n">db</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span> <span class="o">-</span> <span class="mi">1</span>
+<span class="c1"># This should match the (private) value of db[10].</span>
+<span class="c1"># We recovered the original item from the aggerate results.</span>
+<span class="p">(</span><span class="n">db</span><span class="o">.</span><span class="n">float</span><span class="p">()</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span> <span class="o">&gt;</span> <span class="n">th</span><span class="p">)</span><span class="o">.</span><span class="n">float</span><span class="p">()</span> <span class="o">-</span> <span class="p">(</span><span class="n">pdb</span><span class="o">.</span><span class="n">float</span><span class="p">()</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span> <span class="o">&gt;</span> <span class="n">th</span><span class="p">)</span><span class="o">.</span><span class="n">float</span><span class="p">()</span>
+</code></pre></div>
+
+<p>The set of queries we just performed to reconstruct the original database is referred to as a <em>differencing attack</em>. It follows that a degree of randomness is necessary to satisfy privacy constraints.</p>
+<h1>Local vs Global privacy</h1>
+<p>Depending on when randomness is added, we distinguish between local and global differential privacy. With <em>local</em> privacy we add noise to each individial data point. With <em>global</em> privacy, we add noise to the query. </p>
+<p>Both methods have tradeoffs. Notably <em>global</em> DP is computationally tractable, and possibly more accurate, but requires us to trust the database owner and that no datapoint was observed before the query took place. Computationally more expensive <em>local</em> DP might be necessary when data is so sensitive, that we do not trust that noise will be added after observing it.</p>
+<p><a href="https://en.wikipedia.org/wiki/Randomized_response">Randomized Response</a> is given as an example of local privacy.</p>
+<h1>Epsilon-delta differential privacy</h1>
+<p>Global differential privacy is expressed in tems of the epsilon-delta theorem <sup id="fnref:1"><a class="footnote-ref" href="#fn:1">1</a></sup>:</p>
+<p>Given a randomized algorithm <span class="math">\(M\)</span> with domain <span class="math">\(\mathbb{N}^{|\chi|}\)</span> (e.g. histograms over a database).
+<span class="math">\(\forall S \subseteq Range(M), \forall x, y \in \mathbb{N}^{|\chi|}\)</span> s.t. <span class="math">\(|| x -y || \leq 1\)</span> (<span class="math">\(x\)</span>, <span class="math">\(y\)</span> are parallel databases).
+</p>
+<div class="math">$$ P ( M(x) \in S ) \leq e^{\epsilon} P(M(y) \in S) + \delta $$</div>
+<p>If <span class="math">\(\delta = 0\)</span>, we say that <span class="math">\(M\)</span> is <span class="math">\(\epsilon\)</span>-differentially private.</p>
+<p>This formalism expresses a query in terms of a "randomized algorithm" <span class="math">\(M\)</span>. The equation <strong>measures</strong> how much privacy is afforded by <span class="math">\(M\)</span>, by <strong>comparing</strong> running <span class="math">\(M\)</span> on an initial database <span class="math">\(x\)</span> and parallel database <span class="math">\(y\)</span>.</p>
+<p><span class="math">\(\epsilon\)</span> controls the maximum distance between <span class="math">\(x\)</span> and <span class="math">\(y\)</span>. <span class="math">\(\delta\)</span> is the probability that the <span class="math">\(\epsilon\)</span> constraint won't hold. Tradeoffs between <span class="math">\(\epsilon\)</span> and <span class="math">\(\delta\)</span> control privacy. </p>
+<h3>Adding noise to the "randomized algorithm"</h3>
+<p>The amount of noise to apply to the query <span class="math">\(M\)</span> is a function of </p>
+<ol>
+<li>The type of noise (e.g Gaussian, Laplacian).</li>
+<li>The <em>sensitivity</em> of the query function.</li>
+<li>The <strong>desired</strong> <span class="math">\(\epsilon\)</span>.</li>
+<li>The <strong>desired</strong> <span class="math">\(\delta\)</span>.</li>
+</ol>
+<p>The following example shows how noise can be added to a <code>sum()</code> query. The noise is sampled from a <span class="math">\(Laplace (\mu, \beta)\)</span> distribution. The desired <span class="math">\(\epsilon\)</span>, and <em>sensitivity</em> of the query, determine the parametrisation of the Laplacian (e.g. <span class="math">\(\beta = \frac{sensitivity}{\epsilon}\)</span>). In literature, this approach is referred to as Laplace Meachanism. It has some nice theoretical properties that, in the general case, ensure that <span class="math">\(\delta = 0\)</span> <sup id="fnref:2"><a class="footnote-ref" href="#fn:2">2</a></sup>.</p>
+<div class="highlight"><pre><span></span><code><span class="n">epsilon</span> <span class="o">=</span> <span class="mf">0.5</span>
+<span class="n">db</span><span class="p">,</span> <span class="n">pdbs</span> <span class="o">=</span> <span class="n">create_db_and_parallels</span><span class="p">(</span><span class="mi">5000</span><span class="p">)</span>
+
+<span class="c1"># Randomised algorithm that adds Laplacian noise to a query</span>
+<span class="k">def</span> <span class="nf">M</span><span class="p">(</span><span class="n">db</span><span class="p">,</span> <span class="n">query</span><span class="p">,</span> <span class="n">sensitivy</span><span class="p">):</span>
+    <span class="n">b</span> <span class="o">=</span> <span class="n">sensitivy</span> <span class="o">/</span> <span class="n">epsilon</span> 
+    <span class="n">noise</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">laplace</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">b</span><span class="p">,</span> <span class="mi">1</span><span class="p">))</span>
+    <span class="k">return</span> <span class="n">query</span><span class="p">(</span><span class="n">db</span><span class="p">)</span> <span class="o">+</span> <span class="n">noise</span>
+<span class="c1"># Sensitivity for `sum` query is 1</span>
+<span class="k">def</span> <span class="nf">query</span><span class="p">(</span><span class="n">db</span><span class="p">):</span>
+    <span class="k">return</span> <span class="n">db</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span>
+
+<span class="n">sensitivity</span><span class="p">(</span><span class="n">query</span><span class="p">,</span> <span class="mi">5000</span><span class="p">)</span>
+<span class="n">M</span><span class="p">(</span><span class="n">db</span><span class="p">,</span> <span class="n">query</span><span class="p">,</span> <span class="mi">1</span><span class="p">),</span> <span class="n">query</span><span class="p">(</span><span class="n">db</span><span class="p">)</span>
+</code></pre></div>
+
+<h1>Training private ML models</h1>
+<p>In the reminder of the course we build on this definition of DP to train private machine learning models. 
+The problem we want to solve is to minimize the amount of information leak in a public set of predictions, and thus protect our model from adversarial attacks (e.g. differencing attacks). See Rigaki &amp; Garcia, <a href="https://arxiv.org/abs/2007.07646"><em>A Survey of Privacy Attacks in Machine Learning</em></a>, 2021 for an introduction on this topic.</p>
+<p>We use the <a href="https://arxiv.org/pdf/1610.05755.pdf"><em>Private Aggregation of Teacher Ensembles</em> (PATE)</a> framework to learn from private data. 
+PATE assumes two main components: private labelled  datasets ("teachers") and a public unlabelled dataset ("student").</p>
+<p>Private data is partitioned in non-overlapping training sets. An ensamble of "teachers" are trained independently (with no privacy guarantee). The "teacher" models are scored on the unlabelled, public, "student" datasets. Their predictions are aggregated and perturbed with random noise. A "student" model can then trained on public data labelled by the ensamble, instead of on the original, private, dataset.</p>
+<figure><img src="images/diffpriv/pate.png" style="display: block; margin-left: auto; margin-right: auto;" alt="PATE pipeline"/>
+<figcaption style="text-align: center;">Fig 1. PATE Pipeline. Source: Papernot et. al, Semi-supervised knowledge transfer for deep learning from private training data, ICLR 2017 (https://arxiv.org/pdf/1610.05755.pdf)</figcaption>
+</figure>
+<p>An example of this training scheme can be found at <a href="https://github.com/gmodena/tinydp">https://github.com/gmodena/tinydp</a>.</p>
+<p>A-posteriori analysis is performed on the teachers aggregate to determie whether the model satisfies the desired <span class="math">\(\epsilon\)</span> budget. In the course we used the <a href="https://github.com/OpenMined/PySyft">pysyft</a> package for this.</p>
+<div class="highlight"><pre><span></span><code><span class="kn">from</span> <span class="nn">syft.frameworks.torch.dp</span> <span class="kn">import</span> <span class="n">pate</span>
+
+<span class="n">data_dep_eps</span><span class="p">,</span> <span class="n">data_ind_eps</span> <span class="o">=</span> <span class="n">pate</span><span class="o">.</span><span class="n">perform_analysis</span><span class="p">(</span><span class="n">teacher_preds</span><span class="o">=</span><span class="n">preds</span><span class="p">,</span>
+                                                   <span class="n">indices</span><span class="o">=</span><span class="n">student_labels</span><span class="p">,</span>
+                                                   <span class="n">noise_eps</span><span class="o">=</span><span class="n">epsilon</span><span class="p">,</span> <span class="n">delta</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">)</span>
+<span class="k">print</span><span class="p">(</span><span class="s2">&quot;Data Independent Epsilon:&quot;</span><span class="p">,</span> <span class="n">data_ind_eps</span><span class="p">)</span>
+<span class="k">print</span><span class="p">(</span><span class="s2">&quot;Data Dependent Epsilon:&quot;</span><span class="p">,</span> <span class="n">data_dep_eps</span><span class="p">)</span>
+</code></pre></div>
+
+<p><code>perform_analysis()</code> uses teacher data, true labels, and a moment tracking algorithm, to compute two metrics:</p>
+<ul>
+<li>a data dependent epsilon quantifies models agreement. </li>
+<li>an epsilon value independet of data, that shows the maximum amount of privacy that could be leaked.</li>
+</ul>
+<p>Intuitively, the more models agree (and overfit less), the less privacy they will leak (thus the lower data dependent epsilon). As a corollary, it is observed that good privacy is obtained by models that generalise and do not overfit.</p>
+<h2>Troubleshooting pysyft dependencies</h2>
+<p>Installing <code>pysyft</code> and the right dependencies for <code>pate</code> on macOS has been a bit tricky. After some tweaking, I was able to set things up with this
+<a href="https://gist.github.com/gmodena/649b01c5a658aba5e866d94182740ad6">conda environment</a>.</p>
+<div class="footnote">
+<hr>
+<ol>
+<li id="fn:1">
+<p>For a proof of this theorem see def 2.4 and theorem 2.2 in <a href="https://www.cis.upenn.edu/~aaroth/Papers/privacybook.pdf"><em>The Algorithmic Foundations of Differential Privacy</em> , Cynthia Dwork and Aaron Roth</a>)&#160;<a class="footnote-backref" href="#fnref:1" title="Jump back to footnote 1 in the text">&#8617;</a></p>
+</li>
+<li id="fn:2">
+<p>This is not true for very small <span class="math">\(\epsilon\)</span>, which require some tweaking. See https://www.seas.upenn.edu/~cis399/files/lecture/l21.pdf.&#160;<a class="footnote-backref" href="#fnref:2" title="Jump back to footnote 2 in the text">&#8617;</a></p>
+</li>
+</ol>
+</div>
+<script type="text/javascript">if (!document.getElementById('mathjaxscript_pelican_#%@#$@#')) {
+    var align = "center",
+        indent = "0em",
+        linebreak = "false";
+
+    if (false) {
+        align = (screen.width < 768) ? "left" : align;
+        indent = (screen.width < 768) ? "0em" : indent;
+        linebreak = (screen.width < 768) ? 'true' : linebreak;
+    }
+
+    var mathjaxscript = document.createElement('script');
+    mathjaxscript.id = 'mathjaxscript_pelican_#%@#$@#';
+    mathjaxscript.type = 'text/javascript';
+    mathjaxscript.src = 'https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.3/latest.js?config=TeX-AMS-MML_HTMLorMML';
+
+    var configscript = document.createElement('script');
+    configscript.type = 'text/x-mathjax-config';
+    configscript[(window.opera ? "innerHTML" : "text")] =
+        "MathJax.Hub.Config({" +
+        "    config: ['MMLorHTML.js']," +
+        "    TeX: { extensions: ['AMSmath.js','AMSsymbols.js','noErrors.js','noUndefined.js'], equationNumbers: { autoNumber: 'none' } }," +
+        "    jax: ['input/TeX','input/MathML','output/HTML-CSS']," +
+        "    extensions: ['tex2jax.js','mml2jax.js','MathMenu.js','MathZoom.js']," +
+        "    displayAlign: '"+ align +"'," +
+        "    displayIndent: '"+ indent +"'," +
+        "    showMathMenu: true," +
+        "    messageStyle: 'normal'," +
+        "    tex2jax: { " +
+        "        inlineMath: [ ['\\\\(','\\\\)'] ], " +
+        "        displayMath: [ ['$$','$$'] ]," +
+        "        processEscapes: true," +
+        "        preview: 'TeX'," +
+        "    }, " +
+        "    'HTML-CSS': { " +
+        "        availableFonts: ['STIX', 'TeX']," +
+        "        preferredFont: 'STIX'," +
+        "        styles: { '.MathJax_Display, .MathJax .mo, .MathJax .mi, .MathJax .mn': {color: 'inherit ! important'} }," +
+        "        linebreaks: { automatic: "+ linebreak +", width: '90% container' }," +
+        "    }, " +
+        "}); " +
+        "if ('default' !== 'default') {" +
+            "MathJax.Hub.Register.StartupHook('HTML-CSS Jax Ready',function () {" +
+                "var VARIANT = MathJax.OutputJax['HTML-CSS'].FONTDATA.VARIANT;" +
+                "VARIANT['normal'].fonts.unshift('MathJax_default');" +
+                "VARIANT['bold'].fonts.unshift('MathJax_default-bold');" +
+                "VARIANT['italic'].fonts.unshift('MathJax_default-italic');" +
+                "VARIANT['-tex-mathit'].fonts.unshift('MathJax_default-italic');" +
+            "});" +
+            "MathJax.Hub.Register.StartupHook('SVG Jax Ready',function () {" +
+                "var VARIANT = MathJax.OutputJax.SVG.FONTDATA.VARIANT;" +
+                "VARIANT['normal'].fonts.unshift('MathJax_default');" +
+                "VARIANT['bold'].fonts.unshift('MathJax_default-bold');" +
+                "VARIANT['italic'].fonts.unshift('MathJax_default-italic');" +
+                "VARIANT['-tex-mathit'].fonts.unshift('MathJax_default-italic');" +
+            "});" +
+        "}";
+
+    (document.body || document.getElementsByTagName('head')[0]).appendChild(configscript);
+    (document.body || document.getElementsByTagName('head')[0]).appendChild(mathjaxscript);
+}
+</script>
+    
+        </div>
+        
+<div class=footer>
+   <div class="contact">
+      <p>
+        &raquo;
+        <a href="mailto:gm@nowave.it">gm@nowave.it</a> |
+        <a href="http://github.com/gmodena" target="_blank">github.com/gmodena</a> |
+        <a href="http://twitter.com/gabriele_modena" target="_blank">http://twitter.com/gabriele_modena</a>
+        &laquo;
+      </p>
+    </div>
+  <p>&copy; Copyright <script language="JavaScript">var date = new Date(); document.write(date.getFullYear());</script> by Gabriele Modena</p>
+  <p>  
+    <a href="https://github.com/fjavieralba/flasky">Theme</a>  by <a href="http://fjavieralba.com">fjavieralba</a> (Modified)
+  </p> 
+<!--
+  <p>
+    <div class=social style="font-size: 27px;">
+      <ul>
+        <script language="JavaScript">
+          u = '';
+          s = '';
+          document.write('<a href=\"mailto:' + u + '@' + s + '\" target=\"_blank\">');
+        </script>
+            <li><i class="icon-envelope icon-large"></i> </li>
+        </a>
+        <a href="http://twitter.com/" target="_blank"> <li> <i class="icon-twitter-sign icon-large"> </li></i> </a>
+        <a href="" target="_blank"><li><i class="icon-linkedin-sign icon-large" ></i></li></a>
+        <a href="" target="_blank"> <li> <i class="icon-github-sign icon-large"></i> </li> </a>
+        <a href="" target="_blank"><li> <i class="icon-facebook-sign icon-large"></i></li> </a>
+        <a href="" target="_blank"><li><i class="icon-google-plus-sign icon-large"></i> </li> </a>
+        <a href="" target="_blank"><li><i class="icon-pinterest-sign icon-large"></i></li></a>
+
+
+        <a href="./feeds/all.rss.xml" rel="alternate" title="Recent Blog Posts"><li> <i class="icon-rss icon-large"></i> </li></a>
+      </ul>
+    </div>
+  </p>
+-->
+</div>    </div>
+  </body>
+</html>
