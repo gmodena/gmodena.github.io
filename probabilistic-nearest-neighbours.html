@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <script async defer data-domain="nowave.it" src="https://plausible.io/js/plausible.js"></script>
+    <link href='http://fonts.googleapis.com/css?family=Noticia+Text:400,700' rel='stylesheet' type='text/css' />
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title> Probabilistic nearest neighbours | nowave.it </title>
+
+    <link rel="stylesheet" href="./theme/css/style.css" type="text/css" />
+    <link rel="stylesheet" href="./theme/css/pygments.css" type="text/css" />
+    <link rel="stylesheet" href="./theme/css/font-awesome.css" type="text/css"/>
+  </head>
+  <body>
+    <div class=container>
+<div class="header">
+    <a href="./">nowave.it</a> <span class="muted"></span>
+</div>
+
+<div class=navigation>
+    <ul>
+    </ul>
+</div>
+<div class=separator></div>        
+        <div class=body>
+    <h1 class="title"> Probabilistic nearest neighbours</h1>
+    <p class=date> Wed 16 March 2022 </p>
+    <p>Some notes on a probabilistic interpretation of the <a href="https://en.wikipedia.org/wiki/Nearest_neighbour_algorithm">nearest neighbours algorithm</a> 
+as a mixture of Gaussians.</p>
+<h2>Theory</h2>
+<p>This article pretty much follows from <a href="http://web4.cs.ucl.ac.uk/staff/D.Barber/textbook/090310.pdf">Barber, 2012</a></p>
+<p>kNN is simple to understand and implement, and often used as a baseline. This method comes with a 
+few limitations:</p>
+<ul>
+<li>
+<p>In metric based methods, how do we measure distance? Euclidean distance, for instance, does not account for how data is distributed.</p>
+</li>
+<li>
+<p>The whole dataset needs to be stored to make a classification since the novel point must be compared to all of the train points. This is computationally intensive in both the time and space domains.</p>
+</li>
+<li>
+<p>Each distance calculation can be expensive if the datapoints are high dimensional.</p>
+</li>
+</ul>
+<p>We can reformulate the kNN as a class conditional mixture of Gaussians, and work around all of the above.</p>
+<h1>Probabilistic NN</h1>
+<p><a href="http://web4.cs.ucl.ac.uk/staff/D.Barber/textbook/090310.pdf">Barber 2012</a> shows that 
+nearest neighbour is the limiting case of a mixture model.</p>
+<p>What follows is a solution for <strong>Exercise 14.2</strong> from <a href="http://web4.cs.ucl.ac.uk/staff/D.Barber/textbook/270212.pdf">Barber 2012</a> in python.</p>
+<blockquote>
+<blockquote>
+<blockquote>
+<p>Write a routine SoftNearNeigh(xtrain,xtest,trainlabels,sigma) to implement soft
+nearest neighbours, analogous to nearNeigh.m. Here sigma is the variance σ2 in equation (14.3.1). The
+file NNdata.mat contains training and test data for the handwritten digits 5 and 9. Using leave one out
+cross-validation, find the optimal <div class="math">$$\sigma^2$$</div> and use this to compute the classification accuracy of the method on
+the test data. Hint: you may have numerical difficulty with this method. To avoid this, consider using the
+logarithm, and how to numerically compute <div class="math">$$log (e^a + e^b)$$</div> for large (negative) a and b. See also logsumexp.m.</p>
+</blockquote>
+</blockquote>
+</blockquote>
+<h2>Data</h2>
+<p>For this exercise we'll be using a subsent of the MNIST dataset provided in BRMLtoolkit, available online 
+at <a href="http://web4.cs.ucl.ac.uk/staff/D.Barber/pmwiki/pmwiki.php?n=Brml.Software">Barber 2012</a>.</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span> <span class="nn">scipy.io</span> <span class="k">as</span> <span class="nn">sio</span>
+<span class="n">nndata</span> <span class="o">=</span> <span class="n">sio</span><span class="o">.</span><span class="n">loadmat</span><span class="p">(</span><span class="s1">&#39;BRMLtoolkit/data/NNdata.mat&#39;</span><span class="p">)</span>
+</code></pre></div>
+
+<p>We want to solve a binary classification problem:</p>
+<div class="highlight"><pre><span></span><code><span class="n">class0_train</span> <span class="o">=</span> <span class="n">nndata</span><span class="p">[</span><span class="s1">&#39;train5&#39;</span><span class="p">]</span>
+<span class="n">class0_test</span> <span class="o">=</span> <span class="n">nndata</span><span class="p">[</span><span class="s1">&#39;test5&#39;</span><span class="p">]</span>
+
+<span class="n">class1_train</span> <span class="o">=</span> <span class="n">nndata</span><span class="p">[</span><span class="s1">&#39;train9&#39;</span><span class="p">]</span>
+<span class="n">class1_test</span> <span class="o">=</span> <span class="n">nndata</span><span class="p">[</span><span class="s1">&#39;test9&#39;</span><span class="p">]</span>
+</code></pre></div>
+
+<p>Barber follows a generative approach and uses kernel density estimation (a <a href="https://en.wikipedia.org/wiki/Kernel_density_estimation">Parzen estimator</a>) to interpret kNN as the limiting 
+case of a mixture of Gaussians. An isotropic Gaussian of width <span class="math">\(\sigma^2\)</span> is placed at each data point, and a mixture is used to model each class.</p>
+<h3>The Parzen estimator</h3>
+<p>With kernel density estimation we want to approximate a PDF with a mixture of continuous probability distributions. A Parzen estimator centers a probability distribution at each data point <span class="math">\(\textbf{x}_n\)</span> as</p>
+<div class="math">$$P(\textbf{x}) = \frac{1}{N} \sum_{n=1}^{N} P(\textbf{x}|\textbf{x}_{n})$$</div>
+<p>For a D dimensional <span class="math">\(\textbf{x}\)</span> we choose an isotropic Gaussian </p>
+<div class="math">$$P(\textbf{x}|\textbf{x}_{n}) = \mathcal{N} (\textbf{x}|\textbf{x}_{n}, \sigma^2 \textbf{I}_D)$$</div>
+<p>, </p>
+<p>where <span class="math">\(\sigma^2 \textbf{I}_D\)</span> is a scalar variance multiplied by an identity matrix.</p>
+<p>This gives the mixture:</p>
+<div class="math">$$ 
+P(x) = \frac{1}{N} \sum_{n=1}^{N} \frac{1}{(2 \pi \sigma^2)^{D/2}}\mathcal{e}^{- (\textbf{x} - \textbf{x}\_n)^2 / 2\sigma^2}
+$$</div>
+<h3>Nearest Neighbour classification</h3>
+<p>Given classes <span class="math">\(c = {0, 1}\)</span>, 
+we consider the following mixture model</p>
+<div class="math">$$P(\textbf{x}|c=0) = \frac{1}{N_0} \sum_{n \in \textit{class 0}} \mathcal{N}(\textbf{x}| \textbf{x}_n, \sigma^2\textbf{I})  =  \frac{1}{N_0} \frac{1}{(2 \pi \sigma^2)^{\frac{D}{2}}} \sum_{n \in \textit{class 0}} e^{-(\textbf{x} - \textbf{x}_n)^2 / (2 \sigma^2) }$$</div>
+<div class="math">$$P(\textbf{x}|c=1) = \frac{1}{N_1} \sum_{n \in \textit{class 1}} \mathcal{N}(\textbf{x}| \textbf{x}_n, \sigma^2\textbf{I}) = \frac{1}{N_1} \frac{1}{(2 \pi \sigma^2)^{\frac{D}{2}}} \sum_{n \in \textit{class 1}} e^{-(\textbf{x} - \textbf{x}_n)^2 / (2 \sigma^2) } $$</div>
+<!-- #region -->
+<p>To classify a new instance <span class="math">\(\textbf{x}_{*}\)</span> we calculate the posterior for both classes and take the ratio</p>
+<p><span class="math">\(\frac{P(c=0|\textbf{x}_{\star})}{P(c=1|\textbf{x}_{\star})} = \frac{P(\textbf{x}_{\star}|c=0) P(c=0)}{P(\textbf{x}_{\star}|c=1) P(c=1)}\)</span>. If this ratio is <span class="math">\(\gt 1\)</span> than we classify <span class="math">\(\textbf{n}_{\star}\)</span> as class 0, otherwise as class 1. The class probabilities can be determined by maximum likelihood with the following setting <span class="math">\(P(c) = \sum_{i=0}^N \frac{N_{i}}{N}\)</span>.</p>
+<p>To understand how this relates to the nearest neighbour method, we need to consider the case <span class="math">\(\sigma^2 \rightarrow 0\)</span>. </p>
+<p>Note that both nominator and denominator are sums of exponentials.
+Intuitively, if the veriance is small, the nominator will be dominated by the term for which point <span class="math">\(x_{n_0} \in class 0\)</span> is closest to <span class="math">\(\textbf{x}_{\star}\)</span>. The same holds for the denominator and points in class 1.</p>
+<div class="math">$$\frac{1}{(2 \pi \sigma^2)^{\frac{D}{2}}}$$</div>
+<p> cancels out, and for vanishingly small values of <span class="math">\(\sigma\)</span> we have</p>
+<div class="math">$$\frac{P(c=0|\textbf{x}_{\star})}{P(c=1|\textbf{x}_{\star})} \approx$$</div>
+<div class="math">$$\frac{ e^{-(\textbf{x}_{\star} - x_{n_0})^2 / (2 \sigma^2)} P(c=0)/N_{0}}  {e^{-(\textbf{x}_{\star} - x_{n_1})^2 / (2 \sigma^2)}P(c=1)/N_{1}}$$</div>
+<div class="math">$$\frac{ e^{-(\textbf{x}_{\star} - x_{n_0})^2 / (2 \sigma^2)}}  {e^{-(\textbf{x}_{\star} - x_{n_1})^2 / (2 \sigma^2)}} $$</div>
+<p>In the limit <span class="math">\(\sigma^2 \rightarrow 0\)</span> we have </p>
+<div class="math">$$\frac{ e^{-(\textbf{x}_{\star} - x_{n_0})^2}}{e^{-(\textbf{x}_{\star} - x_{n_1})^2}}$$</div>
+<p>so we classify <span class="math">\(\textbf{x}_{\star}\)</span> as class 0 if it is closer to class 0 than class 1.</p>
+<!-- #endregion -->
+
+<h2>Implementation</h2>
+<p>Summing a large number exponentials can result in overflow (underflow), and accuracy loss.
+A common trick to avoid this issue is to perform arithemtic computation on a logarithmic scale. </p>
+<div class="math">$$LogSumExp(x_1, \dots, x_n) = x_{\star} + \log\left( \exp(x_1-x_{\star})+ \cdots + \exp(x_n-x_{\star}) \right)$$</div>
+<p>
+where </p>
+<div class="math">$$x_{\star} = \max{{x_1, \dots, x_n}}$$</div>
+<p>We can implement LogSumExp in numpy as</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
+<span class="k">def</span> <span class="nf">log_sum_exp</span><span class="p">(</span><span class="n">x</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Log likelihood of a Parzen estimator</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">a</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">max</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">max</span><span class="p">(</span><span class="n">x</span><span class="p">)</span> <span class="o">+</span> <span class="n">np</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="n">x</span><span class="o">-</span><span class="n">a</span><span class="p">)))</span>
+</code></pre></div>
+
+<p>However, <code>scipy</code> provides a <a href="https://docs.scipy.org/doc/scipy/reference/generated/scipy.special.logsumexp.html">logsumexp</a> 
+function that computes the log of the sum of exponentials of input elements.</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
+<span class="kn">from</span> <span class="nn">scipy.special</span> <span class="kn">import</span> <span class="n">logsumexp</span>
+
+<span class="k">def</span> <span class="nf">parzen</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">mu</span><span class="p">,</span> <span class="n">sigma</span><span class="o">=</span><span class="mf">1.0</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Makes a function that allows the evalution of a Parzen </span>
+<span class="sd">    estimator where the Kernel is a normal distribution with </span>
+<span class="sd">    stddev sigma and with points at mu.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    -----------</span>
+<span class="sd">    x : numpy array</span>
+<span class="sd">        Classification input</span>
+<span class="sd">    mu : numpy matrix</span>
+<span class="sd">        Contains the data points over which this distribution is based.</span>
+<span class="sd">    sigma : scalar</span>
+<span class="sd">        The standard deviation of the normal distribution around each data \</span>
+<span class="sd">        point.</span>
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    lpdf : callable</span>
+<span class="sd">        Estimator of the log of the probability density under a point.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">z</span> <span class="o">=</span> <span class="n">mu</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">sigma</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">pi</span> <span class="o">*</span> <span class="mf">2.0</span><span class="p">)</span>
+    <span class="n">e</span> <span class="o">=</span> <span class="p">(</span><span class="o">-</span><span class="p">(</span><span class="n">x</span> <span class="o">-</span> <span class="n">mu</span><span class="p">)</span><span class="o">**</span><span class="mf">2.0</span><span class="p">)</span> <span class="o">/</span> <span class="p">(</span><span class="mf">2.0</span> <span class="o">*</span> <span class="n">sigma</span><span class="p">)</span>
+    <span class="n">log_p</span> <span class="o">=</span> <span class="n">logsumexp</span><span class="p">(</span><span class="n">e</span><span class="p">)</span> 
+    <span class="k">return</span> <span class="n">log_p</span> <span class="o">-</span> <span class="n">z</span>
+</code></pre></div>
+
+<p>And we put everything together with:</p>
+<div class="highlight"><pre><span></span><code><span class="n">sigmas</span> <span class="o">=</span> <span class="p">[</span><span class="mf">1e-13</span><span class="p">]</span>
+
+<span class="n">priorC0</span> <span class="o">=</span> <span class="n">class0_train</span><span class="o">.</span><span class="n">T</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">/</span> <span class="p">(</span><span class="n">class0_train</span><span class="o">.</span><span class="n">T</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">+</span> <span class="n">class1_train</span><span class="o">.</span><span class="n">T</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+<span class="n">priorC1</span> <span class="o">=</span> <span class="n">class1_train</span><span class="o">.</span><span class="n">T</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">/</span> <span class="p">(</span><span class="n">class1_train</span><span class="o">.</span><span class="n">T</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">+</span> <span class="n">class1_train</span><span class="o">.</span><span class="n">T</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+
+
+<span class="k">for</span> <span class="n">sigma</span> <span class="ow">in</span> <span class="n">sigmas</span><span class="p">:</span>
+    <span class="n">correct</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">class0_test</span><span class="o">.</span><span class="n">T</span><span class="p">:</span>
+        <span class="n">c0p</span> <span class="o">=</span> <span class="n">priorC0</span> <span class="o">*</span> <span class="n">parzen</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">class0_train</span><span class="o">.</span><span class="n">T</span><span class="p">,</span> <span class="n">sigma</span><span class="o">=</span><span class="n">sigma</span><span class="p">)</span> 
+        <span class="n">c1p</span> <span class="o">=</span> <span class="n">priorC1</span> <span class="o">*</span> <span class="n">parzen</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">class1_train</span><span class="o">.</span><span class="n">T</span><span class="p">,</span> <span class="n">sigma</span><span class="o">=</span><span class="n">sigma</span><span class="p">)</span> 
+
+        <span class="k">if</span> <span class="p">(</span><span class="n">c0p</span> <span class="o">/</span> <span class="n">c1p</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="n">correct</span> <span class="o">+=</span> <span class="mi">1</span>
+
+    <span class="nb">print</span><span class="p">(</span><span class="n">sigma</span><span class="p">,</span> <span class="n">correct</span><span class="p">,</span> <span class="n">class0_test</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="n">correct</span> <span class="o">/</span> <span class="n">class0_test</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span>
+
+    <span class="n">correct</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">class1_test</span><span class="o">.</span><span class="n">T</span><span class="p">:</span>
+        <span class="n">c0p</span> <span class="o">=</span> <span class="n">priorC0</span> <span class="o">*</span> <span class="n">parzen</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">class0_train</span><span class="o">.</span><span class="n">T</span><span class="p">,</span> <span class="n">sigma</span><span class="o">=</span><span class="n">sigma</span><span class="p">)</span> 
+        <span class="n">c1p</span> <span class="o">=</span> <span class="n">priorC1</span> <span class="o">*</span> <span class="n">parzen</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">class1_train</span><span class="o">.</span><span class="n">T</span><span class="p">,</span> <span class="n">sigma</span><span class="o">=</span><span class="n">sigma</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="p">(</span><span class="n">c0p</span> <span class="o">/</span> <span class="n">c1p</span><span class="p">)</span> <span class="o">&lt;</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="n">correct</span> <span class="o">+=</span> <span class="mi">1</span>
+
+    <span class="nb">print</span><span class="p">(</span><span class="n">sigma</span><span class="p">,</span> <span class="n">correct</span><span class="p">,</span> <span class="n">class1_test</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="n">correct</span> <span class="o">/</span> <span class="p">(</span><span class="n">class1_test</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]))</span>
+</code></pre></div>
+
+<script type="text/javascript">if (!document.getElementById('mathjaxscript_pelican_#%@#$@#')) {
+    var align = "center",
+        indent = "0em",
+        linebreak = "false";
+
+    if (false) {
+        align = (screen.width < 768) ? "left" : align;
+        indent = (screen.width < 768) ? "0em" : indent;
+        linebreak = (screen.width < 768) ? 'true' : linebreak;
+    }
+
+    var mathjaxscript = document.createElement('script');
+    mathjaxscript.id = 'mathjaxscript_pelican_#%@#$@#';
+    mathjaxscript.type = 'text/javascript';
+    mathjaxscript.src = 'https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.3/latest.js?config=TeX-AMS-MML_HTMLorMML';
+
+    var configscript = document.createElement('script');
+    configscript.type = 'text/x-mathjax-config';
+    configscript[(window.opera ? "innerHTML" : "text")] =
+        "MathJax.Hub.Config({" +
+        "    config: ['MMLorHTML.js']," +
+        "    TeX: { extensions: ['AMSmath.js','AMSsymbols.js','noErrors.js','noUndefined.js'], equationNumbers: { autoNumber: 'none' } }," +
+        "    jax: ['input/TeX','input/MathML','output/HTML-CSS']," +
+        "    extensions: ['tex2jax.js','mml2jax.js','MathMenu.js','MathZoom.js']," +
+        "    displayAlign: '"+ align +"'," +
+        "    displayIndent: '"+ indent +"'," +
+        "    showMathMenu: true," +
+        "    messageStyle: 'normal'," +
+        "    tex2jax: { " +
+        "        inlineMath: [ ['\\\\(','\\\\)'] ], " +
+        "        displayMath: [ ['$$','$$'] ]," +
+        "        processEscapes: true," +
+        "        preview: 'TeX'," +
+        "    }, " +
+        "    'HTML-CSS': { " +
+        "        availableFonts: ['STIX', 'TeX']," +
+        "        preferredFont: 'STIX'," +
+        "        styles: { '.MathJax_Display, .MathJax .mo, .MathJax .mi, .MathJax .mn': {color: 'inherit ! important'} }," +
+        "        linebreaks: { automatic: "+ linebreak +", width: '90% container' }," +
+        "    }, " +
+        "}); " +
+        "if ('default' !== 'default') {" +
+            "MathJax.Hub.Register.StartupHook('HTML-CSS Jax Ready',function () {" +
+                "var VARIANT = MathJax.OutputJax['HTML-CSS'].FONTDATA.VARIANT;" +
+                "VARIANT['normal'].fonts.unshift('MathJax_default');" +
+                "VARIANT['bold'].fonts.unshift('MathJax_default-bold');" +
+                "VARIANT['italic'].fonts.unshift('MathJax_default-italic');" +
+                "VARIANT['-tex-mathit'].fonts.unshift('MathJax_default-italic');" +
+            "});" +
+            "MathJax.Hub.Register.StartupHook('SVG Jax Ready',function () {" +
+                "var VARIANT = MathJax.OutputJax.SVG.FONTDATA.VARIANT;" +
+                "VARIANT['normal'].fonts.unshift('MathJax_default');" +
+                "VARIANT['bold'].fonts.unshift('MathJax_default-bold');" +
+                "VARIANT['italic'].fonts.unshift('MathJax_default-italic');" +
+                "VARIANT['-tex-mathit'].fonts.unshift('MathJax_default-italic');" +
+            "});" +
+        "}";
+
+    (document.body || document.getElementsByTagName('head')[0]).appendChild(configscript);
+    (document.body || document.getElementsByTagName('head')[0]).appendChild(mathjaxscript);
+}
+</script>
+    
+        </div>
+        
+<div class=footer>
+   <div class="contact">
+      <p>
+        &raquo;
+        <a href="mailto:gm@nowave.it">gm@nowave.it</a> |
+        <a href="http://github.com/gmodena" target="_blank">github.com/gmodena</a> |
+        <a href="http://twitter.com/gabriele_modena" target="_blank">http://twitter.com/gabriele_modena</a>
+        &laquo;
+      </p>
+    </div>
+  <p>&copy; Copyright <script language="JavaScript">var date = new Date(); document.write(date.getFullYear());</script> by Gabriele Modena</p>
+  <p>  
+    <a href="https://github.com/fjavieralba/flasky">Theme</a>  by <a href="http://fjavieralba.com">fjavieralba</a> (Modified)
+  </p> 
+<!--
+  <p>
+    <div class=social style="font-size: 27px;">
+      <ul>
+        <script language="JavaScript">
+          u = '';
+          s = '';
+          document.write('<a href=\"mailto:' + u + '@' + s + '\" target=\"_blank\">');
+        </script>
+            <li><i class="icon-envelope icon-large"></i> </li>
+        </a>
+        <a href="http://twitter.com/" target="_blank"> <li> <i class="icon-twitter-sign icon-large"> </li></i> </a>
+        <a href="" target="_blank"><li><i class="icon-linkedin-sign icon-large" ></i></li></a>
+        <a href="" target="_blank"> <li> <i class="icon-github-sign icon-large"></i> </li> </a>
+        <a href="" target="_blank"><li> <i class="icon-facebook-sign icon-large"></i></li> </a>
+        <a href="" target="_blank"><li><i class="icon-google-plus-sign icon-large"></i> </li> </a>
+        <a href="" target="_blank"><li><i class="icon-pinterest-sign icon-large"></i></li></a>
+
+
+        <a href="./feeds/all.rss.xml" rel="alternate" title="Recent Blog Posts"><li> <i class="icon-rss icon-large"></i> </li></a>
+      </ul>
+    </div>
+  </p>
+-->
+</div>    </div>
+  </body>
+</html>
