@@ -23,7 +23,7 @@
 <div class=separator></div>        
         <div class=body>
     <h1 class="title"> Async I/O with PyFlink</h1>
-    <p class=date> di 07 mei 2024 </p>
+    <p class=date> Tue 07 May 2024 </p>
     <p>This article contains notes on the implementation of asynchronous callbacks in PyFlink. The work is derived from a collaboration with <a href="https://m.mediawiki.org/wiki/Platform_Engineering_Team/Event_Platform_Value_Stream">Wikimedia's Platform team</a> and <a href="https://www.tngtech.com/en/index.html">TNG</a>, and further developed in a <a href="https://doc.wikimedia.org/data-engineering/eventutilities-python/">hosted Flink solution</a>.</p>
 <p>Code snippets in this article have not been tested. They should be treated more like pseduo code than as a reference.</p>
 <h2>Introduction</h2>
@@ -177,9 +177,9 @@
 <p>This article showed an approach to execute async functions on a Flink DataStream by introducing ad-hoc windowing logic and a local thread pool.</p>
 <h1>References</h1>
 <ul>
-<li>https://www.alibabacloud.com/help/en/flink/use-cases/best-practices-for-using-timers-in-datastream</li>
-<li>https://gitlab.wikimedia.org/repos/data-engineering/eventutilities-python/-/blob/main/docs/DESIGN.md?ref_type=heads#asynchronous-http-callback-via-datastream-minibatching</li>
-<li>https://gitlab.wikimedia.org/repos/data-engineering/eventutilities-python/-/blob/main/eventutilities_python/stream/manager.py?ref_type=heads#L589</li>
+    <li><a href="https://www.alibabacloud.com/help/en/flink/use-cases/best-practices-for-using-timers-in-datastream">https://www.alibabacloud.com/help/en/flink/use-cases/best-practices-for-using-timers-in-datastream</a></li>
+<li><a href="https://gitlab.wikimedia.org/repos/data-engineering/eventutilities-python/-/blob/main/docs/DESIGN.md?ref_type=heads#asynchronous-http-callback-via-datastream-minibatching">https://gitlab.wikimedia.org/repos/data-engineering/eventutilities-python/-/blob/main/docs/DESIGN.md?ref_type=heads#asynchronous-http-callback-via-datastream-minibatching</a></li>
+<li><a href="https://gitlab.wikimedia.org/repos/data-engineering/eventutilities-python/-/blob/main/eventutilities_python/stream/manager.py?ref_type=heads#L589">https://gitlab.wikimedia.org/repos/data-engineering/eventutilities-python/-/blob/main/eventutilities_python/stream/manager.py?ref_type=heads#L589</a></li>
 </ul>
 <div class="footnote">
 <hr>
