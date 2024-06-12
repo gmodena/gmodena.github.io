@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <script async defer data-domain="nowave.it" src="https://plausible.io/js/plausible.js"></script>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title> Building the OpenJDK/HotSpot disassembler with Nix | nowave.it </title>
+    <link rel="stylesheet" href="./theme/css/style.css" type="text/css" />
+    <link rel="stylesheet" href="./theme/css/pygments.css" type="text/css" />
+    <link rel="stylesheet" href="./theme/css/font-awesome.css" type="text/css"/>
+  </head>
+  <body>
+    <div class=container>
+<div class="header">
+    <a href="./">nowave.it</a> <span class="muted"></span>
+</div>
+
+<div class=navigation>
+    <ul>
+    </ul>
+</div>
+<div class=separator></div>        
+        <div class=body>
+    <h1 class="title"> Building the OpenJDK/HotSpot disassembler with Nix</h1>
+    <p class=date> Wed 12 June 2024 </p>
+    <h1>Introduction</h1>
+<p>Lately, I have been doing some work with Java's Panama Project <a href="https://cr.openjdk.org/~vlivanov/panama/vectors/vectors.html">SIMD APIs</a>.</p>
+<p>Not entirely unsurprisingly, I did not observe any performance improvements versus scalar operations on a few of artificial benchmarks.</p>
+<p>Compilers can be very efficient with loop optimization (and autovectorization), and benchmarking hand-rolled SIMD methods is tricky. The best way to understand why things perform in a certain way is to look at the generated assembly code.</p>
+<p>I've done this before, but only with C and C++. Generating assembly for a binary is just a matter of enabling a switch at compile time (or just using <a href="https://godbolt.org">godbolt</a>)s.</p>
+<p>On the JVM, things are a bit more tricky. Out of the box, the JDK will produce bytecode for a given object and method. But that's not very useful, since the optimizations I am interested in observing happen at a lower level.</p>
+<h1>Disassembling Java</h1>
+<p>OpenJDK bundles a plugin disassembler, <code>hsdis</code>, that when used in conjunction with the <code>PrintAssembly</code> option will
+diassemble and print the output of HotSpot's JIT. <code>hsdis</code> ships with OpenJDK's source but needs to be manually built and installed.
+Instructions on how to do so are provided in <a href="https://github.com/openjdk/jdk/blob/master/src/utils/hsdis/README.md">https://github.com/openjdk/jdk/blob/master/src/utils/hsdis/README.md</a>.</p>
+<p><a href="https://jornvernee.github.io/">Jorn Vernee</a> has an excellent article on building <code>hsdis</code> with recent JDKs using an adhoc <code>cmake</code> script https://jornvernee.github.io/hsdis/2022/04/30/hsdis.html.</p>
+<h1>I use nixos btw</h1>
+<p>These days I manage all my development environments with <a href="https://nixos.org/">Nix</a>. While the <code>nixpkgs</code> repository does not provide a binary for hsdis, building it from scratch is pretty straightforward.</p>
+<p>I wrote a small <a href="https://nixos.wiki/wiki/Overlays">overlay</a> for <a href="https://nixos.wiki/wiki/Java">jdk22</a> that enables an LLVM backend option at compile time and appends the required make incantations to the package derivation build phase:</p>
+<div class="highlight"><pre><span></span><code><span class="kd">final</span><span class="o">:</span><span class="w"> </span><span class="n">prev</span><span class="o">:</span>
+<span class="o">{</span>
+<span class="w">  </span><span class="n">jdk22</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">prev</span><span class="o">.</span><span class="na">jdk22</span><span class="o">.</span><span class="na">overrideAttrs</span><span class="w"> </span><span class="o">(</span><span class="n">old</span><span class="o">:</span><span class="w"> </span><span class="n">rec</span><span class="w"> </span><span class="o">{</span>
+<span class="w">    </span><span class="n">buildInputs</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">old</span><span class="o">.</span><span class="na">buildInputs</span><span class="w"> </span><span class="o">++</span><span class="w"> </span><span class="o">[</span><span class="w"> </span><span class="kd">final</span><span class="o">.</span><span class="s2">&quot;llvm&quot;</span><span class="w"> </span><span class="o">];</span>
+<span class="w">    </span><span class="n">configureFlags</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">old</span><span class="o">.</span><span class="na">configureFlags</span><span class="w"> </span><span class="o">++</span><span class="w"> </span><span class="o">[</span>
+<span class="w">      </span><span class="s2">&quot;--with-hsdis=llvm&quot;</span>
+<span class="w">      </span><span class="s2">&quot;--with-llvm=${final.llvm.dev}&quot;</span>
+<span class="w">    </span><span class="o">];</span>
+<span class="w">    </span><span class="n">buildPhase</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s1">&#39;&#39;</span>
+<span class="w">      </span><span class="n">$</span><span class="o">{</span><span class="n">prev</span><span class="o">.</span><span class="na">buildPhase</span><span class="w"> </span><span class="n">or</span><span class="w"> </span><span class="s2">&quot;&quot;</span><span class="o">}</span>
+<span class="w">      </span><span class="n">make</span><span class="w"> </span><span class="n">build</span><span class="o">-</span><span class="n">hsdis</span>
+<span class="w">      </span><span class="n">make</span><span class="w"> </span><span class="n">install</span><span class="o">-</span><span class="n">hsdis</span>
+<span class="w">    </span><span class="s1">&#39;&#39;</span><span class="o">;</span>
+<span class="w">  </span><span class="o">});</span>
+<span class="o">}</span>
+</code></pre></div>
+
+<p>This overlay is available as a flake at
+<a href="https://github.com/gmodena/hsdis-jdk22">https://github.com/gmodena/hsdis-jdk22</a>. <strong>Caveat</strong>: as of 2024-06-12 only <code>x86_64-linux</code> targets are supported.</p>
+<p>To use it in a project, it can be imported like this:</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># flake.nix</span>
+<span class="p">{</span>
+<span class="w">  </span><span class="n">inputs</span><span class="o">.</span><span class="n">nixpkgs</span><span class="o">.</span><span class="n">url</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;nixpkgs/nixpkgs-unstable&quot;</span><span class="p">;</span>
+<span class="w">  </span><span class="n">inputs</span><span class="o">.</span><span class="n">hsdis</span><span class="o">-</span><span class="n">jdk22</span><span class="o">.</span><span class="n">url</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;github:gmodena/hsdis-jdk22&quot;</span><span class="p">;</span>
+
+<span class="w">  </span><span class="n">outputs</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">inputs</span><span class="p">:</span>
+<span class="w">  </span><span class="n">let</span>
+<span class="w">      </span><span class="n">system</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;x86_64-linux&quot;</span><span class="p">;</span>
+<span class="w">      </span><span class="n">pkgs</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">inputs</span><span class="o">.</span><span class="n">nixpkgs</span><span class="o">.</span><span class="n">legacyPackages</span><span class="o">.$</span><span class="p">{</span><span class="n">system</span><span class="p">};</span>
+<span class="w">      </span><span class="n">hsdis</span><span class="o">-</span><span class="n">jdk</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">inputs</span><span class="o">.</span><span class="n">hsdis</span><span class="o">-</span><span class="n">jdk22</span><span class="o">.</span><span class="n">packages</span><span class="o">.$</span><span class="p">{</span><span class="n">system</span><span class="p">}</span><span class="o">.</span><span class="n">default</span><span class="p">;</span>
+<span class="w">    </span><span class="ow">in</span>
+<span class="w">    </span><span class="p">{</span>
+<span class="w">      </span><span class="n">devShell</span><span class="o">.$</span><span class="p">{</span><span class="n">system</span><span class="p">}</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">pkgs</span><span class="o">.</span><span class="n">mkShell</span><span class="w"> </span><span class="n">rec</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="n">name</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;java-shell&quot;</span><span class="p">;</span>
+<span class="w">        </span><span class="n">buildInputs</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span><span class="w"> </span><span class="n">hsdis</span><span class="o">-</span><span class="n">jdk</span><span class="w"> </span><span class="p">];</span>
+
+<span class="w">        </span><span class="n">shellHook</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s1">&#39;&#39;</span>
+<span class="w">          </span><span class="k">export</span><span class="w"> </span><span class="n">JAVA_HOME</span><span class="o">=$</span><span class="p">{</span><span class="n">hsdis</span><span class="o">-</span><span class="n">jdk</span><span class="p">}</span>
+<span class="w">          </span><span class="n">PATH</span><span class="o">=</span><span class="s2">&quot;${hsdis-jdk}/bin:$PATH&quot;</span>
+<span class="w">        </span><span class="s1">&#39;&#39;</span><span class="p">;</span>
+<span class="w">      </span><span class="p">};</span>
+<span class="w">    </span><span class="p">};</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<p><code>nix develop</code> will drop us in a Java 22 development enviroment with <code>hsdis</code> is available to the jdk.</p>
+<p>We can now compile, run and disassemble <a href="https://github.com/gmodena/hsdis-jdk22/blob/main/Main.java">some code</a> with:</p>
+<div class="highlight"><pre><span></span><code><span class="n">$</span><span class="w"> </span><span class="n">javac</span><span class="w"> </span><span class="n">Main</span><span class="p">.</span><span class="na">java</span>
+<span class="n">$</span><span class="w"> </span><span class="n">java</span><span class="w"> </span><span class="o">-</span><span class="n">Xbatch</span><span class="w"> </span><span class="err">&#39;</span><span class="o">-</span><span class="n">XX</span><span class="p">:</span><span class="o">-</span><span class="n">TieredCompilation</span><span class="sc">&#39; &#39;</span><span class="o">-</span><span class="n">XX</span><span class="p">:</span><span class="n">CompileCommand</span><span class="o">=</span><span class="n">dontinline</span><span class="p">,</span><span class="n">Main</span><span class="p">::</span><span class="n">add</span><span class="o">*</span><span class="sc">&#39; &#39;</span><span class="o">-</span><span class="n">XX</span><span class="p">:</span><span class="n">CompileCommand</span><span class="o">=</span><span class="n">PrintAssembly</span><span class="p">,</span><span class="n">Main</span><span class="p">::</span><span class="n">add</span><span class="o">*</span><span class="err">&#39;</span><span class="w"> </span><span class="n">Main</span>
+</code></pre></div>
+
+<p>If all went well, the following output should be displayed at the cli:</p>
+<div class="highlight"><pre><span></span><code><span class="nl">CompileCommand</span><span class="p">:</span><span class="w"> </span><span class="n">dontinline</span><span class="w"> </span><span class="n">Main</span><span class="p">.</span><span class="n">add</span><span class="o">*</span><span class="w"> </span><span class="kt">bool</span><span class="w"> </span><span class="n">dontinline</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nb">true</span>
+<span class="nl">CompileCommand</span><span class="p">:</span><span class="w"> </span><span class="n">PrintAssembly</span><span class="w"> </span><span class="n">Main</span><span class="p">.</span><span class="n">add</span><span class="o">*</span><span class="w"> </span><span class="kt">bool</span><span class="w"> </span><span class="n">PrintAssembly</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nb">true</span>
+
+<span class="o">=============================</span><span class="w"> </span><span class="n">C2</span><span class="o">-</span><span class="n">compiled</span><span class="w"> </span><span class="n">nmethod</span><span class="w"> </span><span class="o">==============================</span>
+<span class="o">-----------------------------------</span><span class="w"> </span><span class="n">Assembly</span><span class="w"> </span><span class="o">-----------------------------------</span>
+
+<span class="n">Compiled</span><span class="w"> </span><span class="n">method</span><span class="w"> </span><span class="p">(</span><span class="n">c2</span><span class="p">)</span><span class="w"> </span><span class="mi">201</span><span class="w">    </span><span class="mi">1</span><span class="w">             </span><span class="n">Main</span><span class="o">::</span><span class="n">add</span><span class="w"> </span><span class="p">(</span><span class="mi">4</span><span class="w"> </span><span class="n">bytes</span><span class="p">)</span>
+<span class="w"> </span><span class="n">total</span><span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="n">heap</span><span class="w">  </span><span class="p">[</span><span class="mh">0x00007ffff0688f90</span><span class="p">,</span><span class="mh">0x00007ffff06891a0</span><span class="p">]</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">528</span>
+<span class="w"> </span><span class="n">relocation</span><span class="w">     </span><span class="p">[</span><span class="mh">0x00007ffff06890e0</span><span class="p">,</span><span class="mh">0x00007ffff06890f0</span><span class="p">]</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">16</span>
+<span class="w"> </span><span class="n">main</span><span class="w"> </span><span class="n">code</span><span class="w">      </span><span class="p">[</span><span class="mh">0x00007ffff0689100</span><span class="p">,</span><span class="mh">0x00007ffff0689150</span><span class="p">]</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">80</span>
+<span class="w"> </span><span class="n">stub</span><span class="w"> </span><span class="n">code</span><span class="w">      </span><span class="p">[</span><span class="mh">0x00007ffff0689150</span><span class="p">,</span><span class="mh">0x00007ffff0689168</span><span class="p">]</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">24</span>
+<span class="w"> </span><span class="n">oops</span><span class="w">           </span><span class="p">[</span><span class="mh">0x00007ffff0689168</span><span class="p">,</span><span class="mh">0x00007ffff0689170</span><span class="p">]</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">8</span>
+<span class="w"> </span><span class="n">scopes</span><span class="w"> </span><span class="n">data</span><span class="w">    </span><span class="p">[</span><span class="mh">0x00007ffff0689170</span><span class="p">,</span><span class="mh">0x00007ffff0689178</span><span class="p">]</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">8</span>
+<span class="w"> </span><span class="n">scopes</span><span class="w"> </span><span class="n">pcs</span><span class="w">     </span><span class="p">[</span><span class="mh">0x00007ffff0689178</span><span class="p">,</span><span class="mh">0x00007ffff0689198</span><span class="p">]</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">32</span>
+<span class="w"> </span><span class="n">dependencies</span><span class="w">   </span><span class="p">[</span><span class="mh">0x00007ffff0689198</span><span class="p">,</span><span class="mh">0x00007ffff06891a0</span><span class="p">]</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">8</span>
+
+<span class="p">[</span><span class="n">Disassembly</span><span class="p">]</span>
+<span class="o">--------------------------------------------------------------------------------</span>
+<span class="p">[</span><span class="n">Constant</span><span class="w"> </span><span class="n">Pool</span><span class="w"> </span><span class="p">(</span><span class="n">empty</span><span class="p">)]</span>
+
+<span class="o">--------------------------------------------------------------------------------</span>
+
+<span class="p">[</span><span class="n">Verified</span><span class="w"> </span><span class="n">Entry</span><span class="w"> </span><span class="n">Point</span><span class="p">]</span>
+<span class="w">  </span><span class="cp"># {method} {0x00007fff764002d8} &#39;add&#39; &#39;(II)I&#39; in &#39;Main&#39;</span>
+<span class="w">  </span><span class="cp"># parm0:    rsi       = int</span>
+<span class="w">  </span><span class="cp"># parm1:    rdx       = int</span>
+<span class="w">  </span><span class="cp">#           [sp+0x20]  (sp of caller)</span>
+<span class="w">  </span><span class="mh">0x00007ffff0689100</span><span class="o">:</span><span class="w">       </span><span class="n">subq</span><span class="w">    </span><span class="n">$0x18</span><span class="p">,</span><span class="w"> </span><span class="o">%</span><span class="n">rsp</span>
+<span class="w">  </span><span class="mh">0x00007ffff0689107</span><span class="o">:</span><span class="w">       </span><span class="n">movq</span><span class="w">    </span><span class="o">%</span><span class="n">rbp</span><span class="p">,</span><span class="w"> </span><span class="mh">0x10</span><span class="p">(</span><span class="o">%</span><span class="n">rsp</span><span class="p">)</span>
+<span class="w">  </span><span class="mh">0x00007ffff068910c</span><span class="o">:</span><span class="w">       </span><span class="n">cmpl</span><span class="w">    </span><span class="n">$0x0</span><span class="p">,</span><span class="w"> </span><span class="mh">0x20</span><span class="p">(</span><span class="o">%</span><span class="n">r15</span><span class="p">)</span>
+<span class="w">  </span><span class="mh">0x00007ffff0689114</span><span class="o">:</span><span class="w">       </span><span class="n">jne</span><span class="w"> </span><span class="mh">0x2c</span>
+<span class="w">  </span><span class="mh">0x00007ffff068911a</span><span class="o">:</span><span class="w">       </span><span class="n">leal</span><span class="w">    </span><span class="p">(</span><span class="o">%</span><span class="n">rsi</span><span class="p">,</span><span class="o">%</span><span class="n">rdx</span><span class="p">),</span><span class="w"> </span><span class="o">%</span><span class="n">eax</span>
+<span class="w">  </span><span class="mh">0x00007ffff068911d</span><span class="o">:</span><span class="w">       </span><span class="n">addq</span><span class="w">    </span><span class="n">$0x10</span><span class="p">,</span><span class="w"> </span><span class="o">%</span><span class="n">rsp</span>
+<span class="w">  </span><span class="mh">0x00007ffff0689121</span><span class="o">:</span><span class="w">       </span><span class="n">popq</span><span class="w">    </span><span class="o">%</span><span class="n">rbp</span>
+<span class="w">  </span><span class="mh">0x00007ffff0689122</span><span class="o">:</span><span class="w">       </span><span class="n">cmpq</span><span class="w">    </span><span class="mh">0x458</span><span class="p">(</span><span class="o">%</span><span class="n">r15</span><span class="p">),</span><span class="w"> </span><span class="o">%</span><span class="n">rsp</span><span class="w">   </span><span class="p">;</span><span class="w">   </span><span class="p">{</span><span class="n">poll_return</span><span class="p">}</span>
+<span class="w">  </span><span class="mh">0x00007ffff0689129</span><span class="o">:</span><span class="w">       </span><span class="n">ja</span><span class="w">  </span><span class="mh">0x1</span>
+<span class="w">  </span><span class="mh">0x00007ffff068912f</span><span class="o">:</span><span class="w">       </span><span class="n">retq</span>
+<span class="w">  </span><span class="mh">0x00007ffff0689130</span><span class="o">:</span><span class="w">       </span><span class="n">movabsq</span><span class="w"> </span><span class="n">$0x7ffff0689122</span><span class="p">,</span><span class="w"> </span><span class="o">%</span><span class="n">r10</span><span class="p">;</span><span class="w">   </span><span class="p">{</span><span class="n">internal_word</span><span class="p">}</span>
+<span class="w">  </span><span class="mh">0x00007ffff068913a</span><span class="o">:</span><span class="w">       </span><span class="n">movq</span><span class="w">    </span><span class="o">%</span><span class="n">r10</span><span class="p">,</span><span class="w"> </span><span class="mh">0x470</span><span class="p">(</span><span class="o">%</span><span class="n">r15</span><span class="p">)</span>
+<span class="w">  </span><span class="mh">0x00007ffff0689141</span><span class="o">:</span><span class="w">       </span><span class="n">jmp</span><span class="w"> </span><span class="mh">-0x34146</span><span class="w">            </span><span class="p">;</span><span class="w">   </span><span class="p">{</span><span class="n">runtime_call</span><span class="w"> </span><span class="n">SafepointBlob</span><span class="p">}</span>
+<span class="w">  </span><span class="mh">0x00007ffff0689146</span><span class="o">:</span><span class="w">       </span><span class="n">callq</span><span class="w">   </span><span class="mh">-0x54cab</span><span class="w">            </span><span class="p">;</span><span class="w">   </span><span class="p">{</span><span class="n">runtime_call</span><span class="w"> </span><span class="nf">StubRoutines</span><span class="w"> </span><span class="p">(</span><span class="n">final</span><span class="w"> </span><span class="n">stubs</span><span class="p">)}</span>
+<span class="w">  </span><span class="mh">0x00007ffff068914b</span><span class="o">:</span><span class="w">       </span><span class="n">jmp</span><span class="w"> </span><span class="mh">-0x36</span>
+<span class="p">[</span><span class="n">Exception</span><span class="w"> </span><span class="n">Handler</span><span class="p">]</span>
+<span class="w">  </span><span class="mh">0x00007ffff0689150</span><span class="o">:</span><span class="w">       </span><span class="n">jmp</span><span class="w"> </span><span class="mh">-0x2a55</span><span class="w">             </span><span class="p">;</span><span class="w">   </span><span class="p">{</span><span class="n">no_reloc</span><span class="p">}</span>
+<span class="p">[</span><span class="n">Deopt</span><span class="w"> </span><span class="n">Handler</span><span class="w"> </span><span class="n">Code</span><span class="p">]</span>
+<span class="w">  </span><span class="mh">0x00007ffff0689155</span><span class="o">:</span><span class="w">       </span><span class="n">callq</span><span class="w">   </span><span class="mh">0x0</span>
+<span class="w">  </span><span class="mh">0x00007ffff068915a</span><span class="o">:</span><span class="w">       </span><span class="n">subq</span><span class="w">    </span><span class="n">$0x5</span><span class="p">,</span><span class="w"> </span><span class="p">(</span><span class="o">%</span><span class="n">rsp</span><span class="p">)</span>
+<span class="w">  </span><span class="mh">0x00007ffff068915f</span><span class="o">:</span><span class="w">       </span><span class="n">jmp</span><span class="w"> </span><span class="mh">-0x34ec4</span><span class="w">            </span><span class="p">;</span><span class="w">   </span><span class="p">{</span><span class="n">runtime_call</span><span class="w"> </span><span class="n">DeoptimizationBlob</span><span class="p">}</span>
+<span class="w">  </span><span class="mh">0x00007ffff0689164</span><span class="o">:</span><span class="w">       </span><span class="n">hlt</span>
+<span class="w">  </span><span class="mh">0x00007ffff0689165</span><span class="o">:</span><span class="w">       </span><span class="n">hlt</span>
+<span class="w">  </span><span class="mh">0x00007ffff0689166</span><span class="o">:</span><span class="w">       </span><span class="n">hlt</span>
+<span class="w">  </span><span class="mh">0x00007ffff0689167</span><span class="o">:</span><span class="w">       </span><span class="n">hlt</span>
+<span class="o">--------------------------------------------------------------------------------</span>
+<span class="p">[</span><span class="o">/</span><span class="n">Disassembly</span><span class="p">]</span>
+</code></pre></div>
+
+<h1>References</h1>
+<ul>
+<li><a href="https://wiki.openjdk.org/display/HotSpot/PrintAssembly">https://wiki.openjdk.org/display/HotSpot/PrintAssembly</a>.</li>
+<li><a href="https://github.com/openjdk/jdk/blob/master/src/utils/hsdis/README.md">https://github.com/openjdk/jdk/blob/master/src/utils/hsdis/README.md</a>.</li>
+<li><a href="https://jornvernee.github.io/hsdis/2022/04/30/hsdis.html">https://jornvernee.github.io/hsdis/2022/04/30/hsdis.html</a>.</li>
+</ul>
+    
+        </div>
+        
+<div class=footer>
+   <div class="contact">
+      <p>
+        &raquo;
+        <a href="mailto:gm@nowave.it">gm@nowave.it</a> |
+        <a href="http://github.com/gmodena" target="_blank">github.com/gmodena</a>        <a href="https://hachyderm.io/@gmodena" target="_blank">https://hachyderm.io/@gmodena</a>
+      </p>
+    </div>
+  <p>&copy; Copyright <script language="JavaScript">var date = new Date(); document.write(date.getFullYear());</script> by Gabriele Modena</p>
+  <p>  
+    <a href="https://github.com/fjavieralba/flasky">Theme</a>  by <a href="http://fjavieralba.com">fjavieralba</a> (Modified)
+  </p> 
+</div>    </div>
+  </body>
+</html>
