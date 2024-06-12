@@ -25,7 +25,7 @@
     <p class=date> Wed 12 June 2024 </p>
     <h1>Introduction</h1>
 <p>Lately, I have been doing some work with Java's Panama Project <a href="https://cr.openjdk.org/~vlivanov/panama/vectors/vectors.html">SIMD APIs</a>.</p>
-<p>Not entirely unsurprisingly, I did not observe any performance improvements versus scalar operations on a few of artificial benchmarks.</p>
+<p>Not entirely unsurprisingly, I did not observe any performance improvement versus scalar operations on a few artificial benchmarks.</p>
 <p>Compilers can be very efficient with loop optimization (and autovectorization), and benchmarking hand-rolled SIMD methods is tricky. The best way to understand why things perform in a certain way is to look at the generated assembly code.</p>
 <p>I've done this before, but only with C and C++. Generating assembly for a binary is just a matter of enabling a switch at compile time (or just using <a href="https://godbolt.org">godbolt</a>)s.</p>
 <p>On the JVM, things are a bit more tricky. Out of the box, the JDK will produce bytecode for a given object and method. But that's not very useful, since the optimizations I am interested in observing happen at a lower level.</p>
