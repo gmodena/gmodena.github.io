@@ -22,7 +22,7 @@
 <div class=separator></div>        
         <div class=body>
     <h1 class="title"> Building the OpenJDK/HotSpot disassembler with Nix</h1>
-    <p class=date> wo 12 juni 2024 </p>
+    <p class=date> Wed 12 June 2024 </p>
     <h1>Introduction</h1>
 <p>Lately, I have been doing some work with Java's Panama Project <a href="https://cr.openjdk.org/~vlivanov/panama/vectors/vectors.html">SIMD APIs</a>.</p>
 <p>Not entirely unsurprisingly, I did not observe any performance improvements versus scalar operations on a few of artificial benchmarks.</p>
@@ -33,7 +33,9 @@
 <p>OpenJDK bundles a plugin disassembler, <code>hsdis</code>, that when used in conjunction with the <code>PrintAssembly</code> option will
 diassemble and print the output of HotSpot's JIT. <code>hsdis</code> ships with OpenJDK's source but needs to be manually built and installed.
 Instructions on how to do so are provided in <a href="https://github.com/openjdk/jdk/blob/master/src/utils/hsdis/README.md">https://github.com/openjdk/jdk/blob/master/src/utils/hsdis/README.md</a>.</p>
-<p><a href="https://jornvernee.github.io/">Jorn Vernee</a> has an excellent article on building <code>hsdis</code> with recent JDKs using an adhoc <code>cmake</code> script https://jornvernee.github.io/hsdis/2022/04/30/hsdis.html.</p>
+<p><a href="https://jornvernee.github.io/">Jorn Vernee</a> has an excellent article on building <code>hsdis</code> with
+recent JDKs using an adhoc <code>cmake</code> <a
+    href=https://jornvernee.github.io/hsdis/2022/04/30/hsdis.html>script</a>.</p>
 <h1>I use nixos btw</h1>
 <p>These days I manage all my development environments with <a href="https://nixos.org/">Nix</a>. While the <code>nixpkgs</code> repository does not provide a binary for hsdis, building it from scratch is pretty straightforward.</p>
 <p>I wrote a small <a href="https://nixos.wiki/wiki/Overlays">overlay</a> for <a href="https://nixos.wiki/wiki/Java">jdk22</a> that enables an LLVM backend option at compile time and appends the required make incantations to the package derivation build phase:</p>
