@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <script async defer data-domain="nowave.it" src="https://plausible.io/js/plausible.js"></script>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title> No-frills vector search on the JVM | nowave.it </title>
+    <link rel="stylesheet" href="./theme/css/style.css" type="text/css" />
+    <link rel="stylesheet" href="./theme/css/pygments.css" type="text/css" />
+    <link rel="stylesheet" href="./theme/css/font-awesome.css" type="text/css"/>
+  </head>
+  <body>
+    <div class=container>
+<div class="header">
+    <a href="./">nowave.it</a> <span class="muted"></span>
+</div>
+
+<div class=navigation>
+    <ul>
+    </ul>
+</div>
+<div class=separator></div>        
+        <div class=body>
+    <h1 class="title"> No-frills vector search on the JVM</h1>
+    <p class=date> Fri 27 December 2024 </p>
+    <p>In this article, we informally analyze the performance of a naive vector search implementation in core Java, and benchmark it against a rust counterpart,
+ as well as the <a href="https://en.wikipedia.org/wiki/Hierarchical_navigable_small_world">HNSW</a> implemented in Meta's <a href="https://github.com/facebookresearch/faiss">faiss</a>.</p>
+<h1>Binary Space Partitioning</h1>
+<p>A couple of months ago I came across this interesting article <a href="FANN: Vector Search in 200 Lines of Rust">https://fennel.ai/blog/vector-search-in-200-lines-of-rust/</a>,
+that implements vector search with a <a href="https://en.wikipedia.org/wiki/Binary_space_partitioning">space partitioning algorithm</a> similar to the one used in the popular <a href="https://github.com/spotify/annoy">annoy</a> library.</p>
+<p>Both <code>annoy</code> and <code>fann</code> boast good performance, even compared to more sophisticated families of algorithms. However, both of them are implemented using compiled, non-garbage-collected languages (C++ and Rust respectively).</p>
+<p>I was curious to see how badly an implementation in a higher-level language would perform, so I implemented <code>fann</code> (with some tweaks) in core Java. </p>
+<p>The source code is available at <a href="https://github.com/gmodena/searchy">https://github.com/gmodena/searchy</a>, jars are published to <a href="https://jitpack.io/#gmodena/searchy">jitpack.io</a>. Indexes can be built and queried with a fluent interface:</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">io.github.gmodena.searchy.Index</span><span class="p">;</span>
+
+<span class="n">Index</span><span class="w"> </span><span class="n">index</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">Index</span><span class="p">.</span><span class="na">Builder</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">withNumTrees</span><span class="p">(</span><span class="mi">3</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">withMaxNodeSize</span><span class="p">(</span><span class="mi">15</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">add</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="kt">float</span><span class="o">[]</span><span class="p">{</span><span class="mf">1f</span><span class="p">,</span><span class="w"> </span><span class="mf">2f</span><span class="p">,</span><span class="w"> </span><span class="mf">3f</span><span class="p">})</span>
+<span class="w">        </span><span class="p">.</span><span class="na">add</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="kt">float</span><span class="o">[]</span><span class="p">{</span><span class="mf">4f</span><span class="p">,</span><span class="w"> </span><span class="mf">5f</span><span class="p">,</span><span class="w"> </span><span class="mf">6f</span><span class="p">})</span>
+<span class="w">        </span><span class="p">.</span><span class="na">add</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="kt">float</span><span class="o">[]</span><span class="p">{</span><span class="mf">7f</span><span class="p">,</span><span class="w"> </span><span class="mf">8f</span><span class="p">,</span><span class="w"> </span><span class="mf">9f</span><span class="p">})</span>
+<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+
+<span class="kd">var</span><span class="w"> </span><span class="n">result</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">index</span><span class="p">.</span><span class="na">query</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="kt">float</span><span class="o">[]</span><span class="p">{</span><span class="mf">6.5f</span><span class="p">,</span><span class="w"> </span><span class="mf">8f</span><span class="p">,</span><span class="w"> </span><span class="mf">9f</span><span class="p">},</span><span class="w"> </span><span class="mi">2</span><span class="p">);</span>
+
+<span class="n">result</span><span class="p">.</span><span class="na">stream</span><span class="p">().</span><span class="na">map</span><span class="p">(</span><span class="n">c</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="n">Arrays</span><span class="p">.</span><span class="na">toString</span><span class="p">(</span><span class="n">c</span><span class="p">.</span><span class="na">vector</span><span class="p">().</span><span class="na">raw</span><span class="p">()</span><span class="w"> </span><span class="p">)</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="s">&quot; &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">c</span><span class="p">.</span><span class="na">id</span><span class="p">()</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="s">&quot; &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">c</span><span class="p">.</span><span class="na">distance</span><span class="p">())</span>
+<span class="w">        </span><span class="p">.</span><span class="na">forEach</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">::</span><span class="n">println</span><span class="p">);</span>
+</code></pre></div>
+
+<h1>Benchmarks</h1>
+<p>I ran <code>fann</code> benchmarks using their suite and stock parameter configuration, on a 12th Gen Intel(R) Core(TM) i5-1240P processor with 32GB of DDR4 RAM.
+This
+<a href="https://gist.github.com/gmodena/a24c7de1a543df154f4ab602e9430aed">nix flake</a> is a helper for setting up the rust and python runtimes.</p>
+<p>As a point of reference, I compared <a href="https://faiss.ai/cpp_api/struct/structfaiss_1_1IndexHNSW.html">faiss HNSW</a> (configured with <code>ef_search=16</code>, <code>ef_construction=40</code>, and <code>max_node_size=15</code>)
+against a lightweight version of the Rust and Java indexes (<code>num_trees=3</code>, <code>max_node_size=15</code>).
+Below are some results taken from an arbitary run of <code>fann</code>, <code>faiss</code> and <code>searchy</code> libraries compared
+to an exhaustive search baseline. All indexes are built on  999,994 300-dimensional, <a href="https://fasttext.cc/docs/en/english-vectors.html">wiki-news FastText embeddings</a>.</p>
+<h2>Indexing time and query latencies</h2>
+<p>The table below shows timing information for the three implementations, measured in seconds.
+<em>Query</em> represents the average latency for a topK (K=20) search across 1,000 randomly sampled vectors. Query
+latency performance of <code>searchy</code> falls between <code>HNSW</code> and <code>fann</code>.</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th><strong>searchy (Java)</strong></th>
+<th><strong>HNSW (C++)</strong></th>
+<th><strong>fann (Rust)</strong></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Indexing</strong></td>
+<td>17.261</td>
+<td>28.4794</td>
+<td>15.451</td>
+</tr>
+<tr>
+<td><strong>Query</strong></td>
+<td>0.00015273</td>
+<td>0.00679184</td>
+<td>0.00007916</td>
+</tr>
+</tbody>
+</table>
+<p><em>Indexing and average query latency times (seconds)</em></p>
+<h2>Search results</h2>
+<p>Below are topK (K=10) matches for the terms <code>river</code> and <code>war</code>, including their respective Euclidean distances from various implementations.
+Results are stochastic, and the topK will change across multiple runs. Variations between implementations reflect differences in algorithm behavior and, to some degree, floating-point
+implementation across different runtimes</p>
+<h3><strong>Closest Matches for river</strong></h3>
+<table>
+<thead>
+<tr>
+<th><strong>Exhaustive Search</strong></th>
+<th></th>
+<th><strong>searchy</strong></th>
+<th></th>
+<th><strong>HNSW</strong></th>
+<th></th>
+<th><strong>fann</strong></th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Word</strong></td>
+<td><strong>Distance</strong></td>
+<td><strong>Word</strong></td>
+<td><strong>Distance</strong></td>
+<td><strong>Word</strong></td>
+<td><strong>Distance</strong></td>
+<td><strong>Word</strong></td>
+<td><strong>Distance</strong></td>
+</tr>
+<tr>
+<td>river</td>
+<td>0.0</td>
+<td>river</td>
+<td>0.0</td>
+<td>river</td>
+<td>0.0</td>
+<td>river</td>
+<td>0.0</td>
+</tr>
+<tr>
+<td>River</td>
+<td>1.391</td>
+<td>river.</td>
+<td>1.731</td>
+<td>River</td>
+<td>1.391</td>
+<td>rivers</td>
+<td>1.476</td>
+</tr>
+<tr>
+<td>rivers</td>
+<td>1.476</td>
+<td>rivulet</td>
+<td>1.974</td>
+<td>swift-flowing</td>
+<td>1.624</td>
+<td>creek</td>
+<td>1.637</td>
+</tr>
+<tr>
+<td>river-</td>
+<td>1.583</td>
+<td>village</td>
+<td>1.977</td>
+<td>flood-swollen</td>
+<td>1.638</td>
+<td>waterway</td>
+<td>1.783</td>
+</tr>
+<tr>
+<td>swift-flowing</td>
+<td>1.624</td>
+<td>oxbow</td>
+<td>2.040</td>
+<td>river.The</td>
+<td>1.682</td>
+<td>park</td>
+<td>2.053</td>
+</tr>
+<tr>
+<td>creek</td>
+<td>1.637</td>
+<td>coulee</td>
+<td>2.063</td>
+<td>unfordable</td>
+<td>1.692</td>
+<td>swamp</td>
+<td>2.092</td>
+</tr>
+<tr>
+<td>flood-swollen</td>
+<td>1.638</td>
+<td>creeks</td>
+<td>2.081</td>
+<td>River-</td>
+<td>1.695</td>
+<td>side-wheeler</td>
+<td>2.102</td>
+</tr>
+<tr>
+<td>river.The</td>
+<td>1.682</td>
+<td>prarie</td>
+<td>2.099</td>
+<td>River.The</td>
+<td>1.695</td>
+<td>enterprise</td>
+<td>2.207</td>
+</tr>
+<tr>
+<td>river-bed</td>
+<td>1.685</td>
+<td>lands</td>
+<td>2.105</td>
+<td>Beult</td>
+<td>1.733</td>
+<td>marshes</td>
+<td>2.261</td>
+</tr>
+<tr>
+<td>unfordable</td>
+<td>1.692</td>
+<td>meadow</td>
+<td>2.127</td>
+<td>Ichamati</td>
+<td>1.734</td>
+<td>towboat</td>
+<td>2.293</td>
+</tr>
+</tbody>
+</table>
+<p><em>Top 10 results for the <code>river</code> query</em></p>
+<hr>
+<h3><strong>Closest Matches for war</strong></h3>
+<table>
+<thead>
+<tr>
+<th><strong>Exhaustive Search</strong></th>
+<th></th>
+<th><strong>searchy</strong></th>
+<th></th>
+<th><strong>HNSW</strong></th>
+<th></th>
+<th><strong>fann</strong></th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Word</strong></td>
+<td><strong>Distance</strong></td>
+<td><strong>Word</strong></td>
+<td><strong>Distance</strong></td>
+<td><strong>Word</strong></td>
+<td><strong>Distance</strong></td>
+<td><strong>Word</strong></td>
+<td><strong>Distance</strong></td>
+</tr>
+<tr>
+<td>war</td>
+<td>0.0</td>
+<td>war</td>
+<td>0.0</td>
+<td>war</td>
+<td>0.0</td>
+<td>war</td>
+<td>0.0</td>
+</tr>
+<tr>
+<td>war--</td>
+<td>1.384</td>
+<td>war.It</td>
+<td>1.470</td>
+<td>war--</td>
+<td>1.384</td>
+<td>War.The</td>
+<td>1.736</td>
+</tr>
+<tr>
+<td>war--a</td>
+<td>1.449</td>
+<td>war-</td>
+<td>1.597</td>
+<td>war--a</td>
+<td>1.449</td>
+<td>admistration</td>
+<td>1.867</td>
+</tr>
+<tr>
+<td>wars</td>
+<td>1.459</td>
+<td>un-winnable</td>
+<td>1.640</td>
+<td>war.It</td>
+<td>1.470</td>
+<td>-war</td>
+<td>1.913</td>
+</tr>
+<tr>
+<td>war.It</td>
+<td>1.470</td>
+<td>US-lead</td>
+<td>1.679</td>
+<td>unwinable</td>
+<td>1.513</td>
+<td>campiagn</td>
+<td>1.914</td>
+</tr>
+<tr>
+<td>unwinable</td>
+<td>1.513</td>
+<td>terrrorism</td>
+<td>1.744</td>
+<td>war.And</td>
+<td>1.518</td>
+<td>subject</td>
+<td>1.927</td>
+</tr>
+<tr>
+<td>war.And</td>
+<td>1.518</td>
+<td>crisises</td>
+<td>1.770</td>
+<td>Iraw</td>
+<td>1.549</td>
+<td>propaganda</td>
+<td>1.959</td>
+</tr>
+<tr>
+<td>hostilites</td>
+<td>1.548</td>
+<td>pre-Iraq</td>
+<td>1.789</td>
+<td>war.But</td>
+<td>1.553</td>
+<td>baby-killers</td>
+<td>2.024</td>
+</tr>
+<tr>
+<td>war.And</td>
+<td>1.518</td>
+<td>capaign</td>
+<td>1.816</td>
+<td>war.The</td>
+<td>1.567</td>
+<td>reports</td>
+<td>2.032</td>
+</tr>
+<tr>
+<td>war.And</td>
+<td>1.553</td>
+<td>Al-Quada</td>
+<td>1.856</td>
+<td>Veitnam</td>
+<td>1.588</td>
+<td>marshes</td>
+<td>2.092</td>
+</tr>
+</tbody>
+</table>
+<p><em>Top 10 results for the <code>war</code> query</em></p>
+<hr>
+<h2>Recall and error distribution</h2>
+<p>Some quick and dirty measurements showed recall metrics roughly matching what was reported in the fann article.
+Recall and query latency are proportional to the number of trees in fann and searchy indexes.</p>
+    
+        </div>
+        
+<div class=footer>
+   <div class="contact">
+      <p>
+        &raquo;
+        <a href="mailto:gm@nowave.it">gm@nowave.it</a> |
+        <a href="http://github.com/gmodena" target="_blank">github.com/gmodena</a>        <a href="https://hachyderm.io/@gmodena" target="_blank">https://hachyderm.io/@gmodena</a>
+      </p>
+    </div>
+  <p>&copy; Copyright <script language="JavaScript">var date = new Date(); document.write(date.getFullYear());</script> by Gabriele Modena</p>
+  <p>  
+    <a href="https://github.com/fjavieralba/flasky">Theme</a>  by <a href="http://fjavieralba.com">fjavieralba</a> (Modified)
+  </p> 
+</div>    </div>
+  </body>
+</html>
