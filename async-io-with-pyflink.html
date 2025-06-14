@@ -5,14 +5,14 @@
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
     
     <title> Async I/O with PyFlink | nowave.it </title>
-    <link rel="stylesheet" href="./theme/css/style.css" type="text/css" />
-    <link rel="stylesheet" href="./theme/css/pygments.css" type="text/css" />
-    <link rel="stylesheet" href="./theme/css/font-awesome.css" type="text/css"/>
+    <link rel="stylesheet" href="http://nowave.it/theme/css/style.css" type="text/css" />
+    <link rel="stylesheet" href="http://nowave.it/theme/css/pygments.css" type="text/css" />
+    <link rel="stylesheet" href="http://nowave.it/theme/css/font-awesome.css" type="text/css"/>
   </head>
   <body>
     <div class=container>
 <div class="header">
-    <a href="./">nowave.it</a> <span class="muted"></span>
+    <a href="http://nowave.it/">nowave.it</a> <span class="muted"></span>
 </div>
 
 <div class=navigation>
@@ -109,7 +109,7 @@
 </code></pre></div>
 
 <h2>Delivery guarantees</h2>
-<p>This implementation would not be able to satisfy <code>EXACTLY_ONCE</code> delivery guarantees. Upon application restarts, events processed since the last checkpoint would be re-processed.</p>
+<p>This implementation cannot provide reliable delivery guarantees. Upon application restarts, events processed since the last checkpoint would be re-processed. Flink's checkpoint barrier is triggered when <code>process_element</code> returns. Since we are dealing with asynchronous logic, if we do not keep track of events in Flink's state, in-flight events would be lost upon application restart.</p>
 <p>To ensure <code>EXACTLY_ONCE</code> (for the Flink side of a streaming application), we can keep a list of events that have already been processed in the current window in a <a href="https://nightlies.apache.org/flink/flink-docs-master/api/java/org/apache/flink/api/common/state/ListState.html">ListState</a>. The <code>ListState</code> is checkpointed consistently by Flink as part of the its distributed snapshots implementation. While this will mitigate duplicate event processing (e.g. calls to api), the guarantee holds within a single window firing and not between windows firing: when resuming from a checkpoint (e.g. recovery), source offsets (and list state) will rewind to the latest known checkpoint.</p>
 <p>A basic implementation would look like the following:</p>
 <div class="highlight"><pre><span></span><code><span class="k">def</span> <span class="nf">open</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
@@ -122,63 +122,96 @@
         <span class="c1"># distributed snapshots.</span>
         <span class="c1"># The ListState could grow large in size. For book-keeping, we clean() it once all events in a batch</span>
         <span class="c1"># have been processed.</span>
+        <span class="c1"># Set a ttl large enough to protect against late-arriving data and backpressure,</span>
+        <span class="c1"># but short enough to prevent memory bloat from accumulating expired sessions.</span>
+        <span class="n">ttl</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">batch_duration_ms</span> <span class="o">*</span> <span class="mi">4</span>
+        <span class="n">cleanup_size</span> <span class="o">=</span> <span class="mi">10</span>
+        <span class="n">ttl_config</span> <span class="o">=</span> <span class="p">(</span> <span class="n">StateTtlConfig</span>
+            <span class="o">.</span><span class="n">new_builder</span><span class="p">(</span><span class="n">Time</span><span class="o">.</span><span class="n">milliseconds</span><span class="p">(</span><span class="n">ttl</span><span class="p">))</span>
+            <span class="o">.</span><span class="n">set_update_type</span><span class="p">(</span><span class="n">StateTtlConfig</span><span class="o">.</span><span class="n">UpdateType</span><span class="o">.</span><span class="n">OnCreateAndWrite</span><span class="p">)</span>
+            <span class="o">.</span><span class="n">set_state_visibility</span><span class="p">(</span><span class="n">StateTtlConfig</span><span class="o">.</span><span class="n">StateVisibility</span><span class="o">.</span><span class="n">NeverReturnExpired</span><span class="p">)</span>
+            <span class="o">.</span><span class="n">cleanup_incrementally</span><span class="p">(</span><span class="n">cleanup_size</span><span class="p">,</span> <span class="kc">True</span><span class="p">)</span>
+            <span class="o">.</span><span class="n">build</span><span class="p">()</span>
+        <span class="p">)</span>
+
+
         <span class="n">event_type_info</span> <span class="o">=</span> <span class="n">Types</span><span class="o">.</span><span class="n">PICKLED_BYTE_ARRAY</span><span class="p">()</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">processed_events_state_descriptor</span> <span class="o">=</span> <span class="n">ListStateDescriptor</span><span class="p">(</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">pending_events_state_descriptor</span><span class="p">:</span> <span class="n">ListStateDescriptor</span> <span class="o">=</span> <span class="n">ListStateDescriptor</span><span class="p">(</span>
             <span class="n">name</span><span class="o">=</span><span class="s2">&quot;list&quot;</span><span class="p">,</span> <span class="n">elem_type_info</span><span class="o">=</span><span class="n">event_type_info</span>
         <span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">processed_events_state</span><span class="p">:</span> <span class="n">ListState</span> <span class="o">=</span> <span class="n">runtime_ctx</span><span class="o">.</span><span class="n">get_list_state</span><span class="p">(</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">processed_events_state_descriptor</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">pending_events_state_descriptor</span><span class="o">.</span><span class="n">enable_time_to_live</span><span class="p">(</span><span class="n">ttl_config</span><span class="p">)</span>
+
+        <span class="c1"># NOTE: this ListState is per-key, and deduplication happens only within a key context.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">pending_events_state</span><span class="p">:</span> <span class="n">ListState</span> <span class="o">=</span> <span class="n">runtime_ctx</span><span class="o">.</span><span class="n">get_list_state</span><span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">pending_events_state_descriptor</span>
         <span class="p">)</span>
+
 
 <span class="k">def</span> <span class="nf">process_element</span><span class="p">(</span>
     <span class="bp">self</span><span class="p">,</span>
     <span class="n">event</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="n">Any</span><span class="p">,</span> <span class="n">Any</span><span class="p">],</span>
     <span class="n">ctx</span><span class="p">:</span> <span class="s2">&quot;KeyedProcessFunction.Context&quot;</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Generator</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="n">Any</span><span class="p">,</span> <span class="n">Any</span><span class="p">],</span> <span class="kc">None</span><span class="p">,</span> <span class="kc">None</span><span class="p">]:</span>
-        <span class="c1"># batch_futures is empty, meaning we are starting a new batch here.</span>
-        <span class="c1"># start a timer for this batch.</span>
-        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">batch_futures</span><span class="p">:</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">trigger_timestamp</span> <span class="o">=</span> <span class="n">ctx</span><span class="o">.</span><span class="n">timer_service</span><span class="p">()</span><span class="o">.</span><span class="n">current_processing_time</span><span class="p">()</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">batch_duration_ms</span>
-            <span class="n">ctx</span><span class="o">.</span><span class="n">timer_service</span><span class="p">()</span><span class="o">.</span><span class="n">register_processing_time_timer</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">trigger_timestamp</span><span class="p">)</span>
-    <span class="c1"># Run func in an executor thread, and add the (future, input event)</span>
-    <span class="c1"># tuple to the batch</span>
-     <span class="n">processed_events</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">processed_events_state</span><span class="o">.</span><span class="n">get</span><span class="p">()</span>
-     <span class="k">if</span> <span class="ow">not</span> <span class="n">processed_events</span> <span class="ow">or</span> <span class="n">event</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">processed_events</span><span class="p">:</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">batch_futures</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="bp">self</span><span class="o">.</span><span class="n">executor</span><span class="o">.</span><span class="n">submit</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">func</span><span class="p">,</span> <span class="n">event</span><span class="p">)))</span>
+    <span class="c1"># batch_futures is empty, meaning we are starting a new batch here.</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">batch_futures</span><span class="p">:</span>
+        <span class="c1"># Restore from state if needed.</span>
+        <span class="k">for</span> <span class="n">pending_event</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">pending_events_state</span><span class="o">.</span><span class="n">get</span><span class="p">():</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">batch_futures</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                <span class="p">(</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">executor</span><span class="o">.</span><span class="n">submit</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">func</span><span class="p">,</span> <span class="n">deepcopy</span><span class="p">(</span><span class="n">pending_event</span><span class="p">)),</span>
+                    <span class="n">pending_event</span><span class="p">,</span>
+                <span class="p">)</span>
+            <span class="p">)</span>
+        <span class="c1"># Start the timer for the new batch</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">trigger_timestamp</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="n">ctx</span><span class="o">.</span><span class="n">timer_service</span><span class="p">()</span><span class="o">.</span><span class="n">current_processing_time</span><span class="p">()</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">batch_duration_ms</span>
+        <span class="p">)</span>
+        <span class="n">ctx</span><span class="o">.</span><span class="n">timer_service</span><span class="p">()</span><span class="o">.</span><span class="n">register_processing_time_timer</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">trigger_timestamp</span><span class="p">)</span>
 
-     <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">batch_futures</span><span class="p">)</span> <span class="o">&gt;=</span> <span class="bp">self</span><span class="o">.</span><span class="n">batch_size</span><span class="p">:</span>
+    <span class="c1"># Add new event to both in-memory batch and state</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">batch_futures</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+        <span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">executor</span><span class="o">.</span><span class="n">submit</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">func</span><span class="p">,</span> <span class="n">deepcopy</span><span class="p">(</span><span class="n">event</span><span class="p">)),</span>
+            <span class="n">event</span><span class="p">,</span>
+        <span class="p">)</span>
+    <span class="p">)</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">pending_events_state</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">event</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">batch_futures</span><span class="p">)</span> <span class="o">&gt;=</span> <span class="bp">self</span><span class="o">.</span><span class="n">batch_size</span><span class="p">:</span>
         <span class="c1"># The batch is full. Cancel the outstanding batch timer</span>
         <span class="c1"># and collect and emit the results.</span>
         <span class="n">ctx</span><span class="o">.</span><span class="n">timer_service</span><span class="p">()</span><span class="o">.</span><span class="n">delete_processing_time_timer</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">trigger_timestamp</span><span class="p">)</span>
+        <span class="k">yield from</span> <span class="bp">self</span><span class="o">.</span><span class="n">_collect</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_close_batch</span><span class="p">())</span>
 
-        <span class="k">yield from</span> <span class="bp">self</span><span class="o">.</span><span class="n">collect_batch</span><span class="p">()</span>
-        <span class="c1"># close the count window</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">batch_futures</span> <span class="o">=</span> <span class="p">[]</span>
-        <span class="c1"># All events have been processed</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">processed_events_state</span><span class="o">.</span><span class="n">clear</span><span class="p">()</span>
+
 <span class="k">def</span> <span class="nf">collect_batch</span><span class="p">():</span>
     <span class="c1"># Iterate over the completed futures according to their insertion order.</span>
     <span class="c1"># `batch_futures` now contains both done and uncompleted futures returned</span>
     <span class="c1"># by wait().</span>
-    <span class="k">for</span> <span class="n">future</span><span class="p">,</span> <span class="n">event</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">batch_futures</span><span class="p">:</span>
+    <span class="k">for</span> <span class="n">future</span><span class="p">,</span> <span class="n">event</span> <span class="ow">in</span> <span class="n">batch_futures</span><span class="p">:</span>
         <span class="k">try</span><span class="p">:</span>
             <span class="n">result</span> <span class="o">=</span> <span class="n">future</span><span class="o">.</span><span class="n">result</span><span class="p">()</span>
-            <span class="c1"># handle errors</span>
+            <span class="k">if</span> <span class="n">result</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">&quot;&#39;</span><span class="si">{</span><span class="n">result</span><span class="si">}</span><span class="s2">&#39;: invalid EventProcessFunction output record.&quot;</span>
+                <span class="p">)</span>
             <span class="k">yield</span> <span class="n">result</span>
         <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
-            <span class="c1"># handle errors</span>
-            <span class="n">logger</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="n">e</span><span class="p">)</span>
-        <span class="k">finally</span><span class="p">:</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">processed_events_state</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">event</span><span class="p">)</span>  <span class="c1"># mark the event as processed</span>
+            <span class="c1"># handle exception</span>
+            <span class="k">pass</span>
+
+    <span class="c1"># All events have been processed and are no longer pending</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">pending_events_state</span><span class="o">.</span><span class="n">clear</span><span class="p">()</span>
 </code></pre></div>
 
 <h1>Conclusion</h1>
 <p>This article showed an approach to execute async functions on a Flink DataStream by introducing ad-hoc windowing logic and a local thread pool.</p>
 <h1>References</h1>
 <ul>
-    <li><a href="https://www.alibabacloud.com/help/en/flink/use-cases/best-practices-for-using-timers-in-datastream">https://www.alibabacloud.com/help/en/flink/use-cases/best-practices-for-using-timers-in-datastream</a></li>
-<li><a href="https://gitlab.wikimedia.org/repos/data-engineering/eventutilities-python/-/blob/main/docs/DESIGN.md?ref_type=heads#asynchronous-http-callback-via-datastream-minibatching">https://gitlab.wikimedia.org/repos/data-engineering/eventutilities-python/-/blob/main/docs/DESIGN.md?ref_type=heads#asynchronous-http-callback-via-datastream-minibatching</a></li>
-<li><a href="https://gitlab.wikimedia.org/repos/data-engineering/eventutilities-python/-/blob/main/eventutilities_python/stream/manager.py?ref_type=heads#L589">https://gitlab.wikimedia.org/repos/data-engineering/eventutilities-python/-/blob/main/eventutilities_python/stream/manager.py?ref_type=heads#L589</a></li>
+<li><a href="https://www.alibabacloud.com/help/en/flink/use-cases/best-practices-for-using-timers-in-datastream">https://www.alibabacloud.com/help/en/flink/use-cases/best-practices-for-using-timers-in-datastream</a></li>
+<li>[https://gitlab.wikimedia.org/repos/data-engineering/eventutilities-python/-/blob/main/docs/DESIGN.md?ref_type=heads#asynchronous-http-callback-via-datastream-minibatching</li>
+<li>https://gitlab.wikimedia.org/repos/data-engineering/](https://gitlab.wikimedia.org/repos/data-engineering/eventutilities-python/-/blob/main/docs/DESIGN.md?ref_type=heads#asynchronous-http-callback-via-datastream-minibatching</li>
+<li><a href="https://gitlab.wikimedia.org/repos/data-engineering/">https://gitlab.wikimedia.org/repos/data-engineering/)eventutilities-python/-/blob/main/eventutilities_python/stream/manager.py?ref_type=heads#L589</a>eventutilities-python/-/blob/main/eventutilities_python/stream/manager.py?ref_type=heads#L589)</li>
 </ul>
 <div class="footnote">
 <hr>
@@ -196,39 +229,13 @@
       <p>
         &raquo;
         <a href="mailto:gm@nowave.it">gm@nowave.it</a> |
-        <a href="http://github.com/gmodena" target="_blank">github.com/gmodena</a> |
-        <a href="https://hachyderm.io/@gmodena" target="_blank">https://hachyderm.io/@gmodena</a>
-        &laquo;
+        <a href="http://github.com/gmodena" target="_blank">github.com/gmodena</a>        <a href="https://hachyderm.io/@gmodena" target="_blank">https://hachyderm.io/@gmodena</a>
       </p>
     </div>
   <p>&copy; Copyright <script language="JavaScript">var date = new Date(); document.write(date.getFullYear());</script> by Gabriele Modena</p>
   <p>  
     <a href="https://github.com/fjavieralba/flasky">Theme</a>  by <a href="http://fjavieralba.com">fjavieralba</a> (Modified)
   </p> 
-<!--
-  <p>
-    <div class=social style="font-size: 27px;">
-      <ul>
-        <script language="JavaScript">
-          u = '';
-          s = '';
-          document.write('<a href=\"mailto:' + u + '@' + s + '\" target=\"_blank\">');
-        </script>
-            <li><i class="icon-envelope icon-large"></i> </li>
-        </a>
-        <a href="http://twitter.com/" target="_blank"> <li> <i class="icon-twitter-sign icon-large"> </li></i> </a>
-        <a href="" target="_blank"><li><i class="icon-linkedin-sign icon-large" ></i></li></a>
-        <a href="" target="_blank"> <li> <i class="icon-github-sign icon-large"></i> </li> </a>
-        <a href="" target="_blank"><li> <i class="icon-facebook-sign icon-large"></i></li> </a>
-        <a href="" target="_blank"><li><i class="icon-google-plus-sign icon-large"></i> </li> </a>
-        <a href="" target="_blank"><li><i class="icon-pinterest-sign icon-large"></i></li></a>
-
-
-        <a href="./feeds/all.rss.xml" rel="alternate" title="Recent Blog Posts"><li> <i class="icon-rss icon-large"></i> </li></a>
-      </ul>
-    </div>
-  </p>
--->
 </div>    </div>
   </body>
 </html>
